@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="sub.tohoqing.com - GPT Image 2 browser workspace for image generation and editing."
+    />
+    <title>Toho Image Studio</title>
+    <link rel="preconnect" href="https://sub.tohoqing.com" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar" aria-label="应用顶部栏">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <path d="M6 9.5 16 4l10 5.5v13L16 28 6 22.5v-13Z" />
+              <path d="M10.5 12.25 16 9.2l5.5 3.05v7.5L16 22.8l-5.5-3.05v-7.5Z" />
+            </svg>
+          </div>
+          <div>
+            <p class="eyebrow">sub.tohoqing.com</p>
+            <h1>Toho Image Studio</h1>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="status-pill" id="connectionPill">
+            <span class="status-dot"></span>
+            <span id="connectionText">等待 API Key</span>
+          </div>
+          <button class="icon-button" id="resetWorkspaceButton" type="button" title="重置工作台">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.75 5v5.25H10" />
+              <path d="M5.3 10.25A7 7 0 1 0 7.2 5.4" />
+            </svg>
+            <span class="sr-only">重置工作台</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="control-panel panel" aria-label="生成控制">
+          <section class="panel-section key-section">
+            <div class="section-heading">
+              <p class="eyebrow">Access</p>
+              <h2>API Key</h2>
+            </div>
+            <label class="field">
+              <span>API Key</span>
+              <div class="key-row">
+                <input
+                  id="apiKeyInput"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="sk-..."
+                />
+                <button class="icon-button compact" id="toggleKeyButton" type="button" title="显示或隐藏">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M2.75 12s3.5-6.25 9.25-6.25S21.25 12 21.25 12s-3.5 6.25-9.25 6.25S2.75 12 2.75 12Z" />
+                    <circle cx="12" cy="12" r="2.75" />
+                  </svg>
+                  <span class="sr-only">显示或隐藏 API Key</span>
+                </button>
+              </div>
+            </label>
+            <label class="check-row">
+              <input id="rememberKeyToggle" type="checkbox" checked />
+              <span>缓存到此浏览器</span>
+            </label>
+            <label class="field endpoint-field">
+              <span>接口地址</span>
+              <input id="baseUrlInput" type="url" spellcheck="false" value="https://sub.tohoqing.com/v1" />
+            </label>
+            <div class="endpoint-actions" aria-label="接口连接测试">
+              <button class="tool-button" id="testEndpointButton" type="button">测试连接</button>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <div class="mode-switch" role="tablist" aria-label="工作模式">
+              <button class="segmented active" type="button" data-mode="generate" role="tab">生成</button>
+              <button class="segmented" type="button" data-mode="edit" role="tab">编辑</button>
+            </div>
+
+            <label class="field prompt-field">
+              <span id="promptLabel">提示词</span>
+              <textarea
+                id="promptInput"
+                rows="9"
+                spellcheck="true"
+                placeholder="描述你想生成的画面、主体、构图、质感、文字要求。"
+              ></textarea>
+            </label>
+
+            <div class="prompt-tools" aria-label="提示词工具">
+              <button class="tool-button" type="button" data-template="主体清晰，背景干净，商业摄影质感，保留自然阴影。">
+                产品图
+              </button>
+              <button class="tool-button" type="button" data-template="电影感光线，浅景深，真实皮肤质感，细节自然。">
+                人像
+              </button>
+              <button class="tool-button" type="button" data-template="把选中区域替换为同风格的新元素，边缘自然融合。">
+                局部替换
+              </button>
+              <button class="tool-button" type="button" data-template="修复瑕疵，保持原图构图、身份和材质不变。">
+                修复
+              </button>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-heading inline">
+              <div>
+                <p class="eyebrow">Model</p>
+                <h2>gpt-image-2</h2>
+              </div>
+              <span class="fixed-chip">固定</span>
+            </div>
+
+            <div class="preset-strip" aria-label="参数预设">
+              <button class="preset-button active" type="button" data-preset="balanced">均衡</button>
+              <button class="preset-button" type="button" data-preset="fast">快速</button>
+              <button class="preset-button" type="button" data-preset="detail">精修</button>
+              <button class="preset-button" type="button" data-preset="shop">电商</button>
+            </div>
+          </section>
+
+          <section class="panel-section parameter-stack">
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>质量</span>
+                <output id="qualityOutput">auto</output>
+              </div>
+              <div class="chip-grid" data-setting="quality">
+                <button class="choice-chip active" type="button" data-value="auto">Auto</button>
+                <button class="choice-chip" type="button" data-value="low">Low</button>
+                <button class="choice-chip" type="button" data-value="medium">Medium</button>
+                <button class="choice-chip" type="button" data-value="high">High</button>
+              </div>
+            </div>
+
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>尺寸</span>
+                <output id="sizeOutput">auto</output>
+              </div>
+              <div class="chip-grid size-grid" data-setting="size">
+                <button class="choice-chip active" type="button" data-value="auto">Auto</button>
+                <button class="choice-chip" type="button" data-value="1024x1024">1:1</button>
+                <button class="choice-chip" type="button" data-value="1536x1024">3:2</button>
+                <button class="choice-chip" type="button" data-value="1024x1536">2:3</button>
+                <button class="choice-chip" type="button" data-value="custom">自定义</button>
+              </div>
+              <div class="custom-size-row" id="customSizeRow" hidden>
+                <label>
+                  <span>宽</span>
+                  <input id="customWidthInput" type="number" min="256" max="3840" step="16" value="1024" />
+                </label>
+                <label>
+                  <span>高</span>
+                  <input id="customHeightInput" type="number" min="256" max="3840" step="16" value="1024" />
+                </label>
+              </div>
+            </div>
+
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>数量</span>
+                <output id="countOutput">1</output>
+              </div>
+              <div class="stepper">
+                <button class="icon-button compact" id="countMinusButton" type="button" title="减少数量">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+                </button>
+                <input id="countInput" type="range" min="1" max="10" value="1" />
+                <button class="icon-button compact" id="countPlusButton" type="button" title="增加数量">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                </button>
+              </div>
+              <div class="chip-grid count-shortcuts" data-setting="n">
+                <button class="choice-chip active" type="button" data-value="1">1 张</button>
+                <button class="choice-chip" type="button" data-value="2">2 张</button>
+                <button class="choice-chip" type="button" data-value="4">4 张</button>
+                <button class="choice-chip" type="button" data-value="8">8 张</button>
+                <button class="choice-chip" type="button" data-value="10">10 张</button>
+              </div>
+            </div>
+
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>格式</span>
+                <output id="formatOutput">png</output>
+              </div>
+              <div class="chip-grid" data-setting="output_format">
+                <button class="choice-chip active" type="button" data-value="png">PNG</button>
+                <button class="choice-chip" type="button" data-value="jpeg">JPEG</button>
+                <button class="choice-chip" type="button" data-value="webp">WebP</button>
+              </div>
+            </div>
+
+            <div class="parameter-block compression-block" id="compressionBlock" hidden>
+              <div class="parameter-head">
+                <span>压缩</span>
+                <output id="compressionOutput">90</output>
+              </div>
+              <input id="compressionInput" type="range" min="0" max="100" value="90" />
+              <div class="chip-grid compression-shortcuts" data-setting="output_compression">
+                <button class="choice-chip" type="button" data-value="60">60</button>
+                <button class="choice-chip" type="button" data-value="75">75</button>
+                <button class="choice-chip active" type="button" data-value="90">90</button>
+                <button class="choice-chip" type="button" data-value="100">100</button>
+              </div>
+            </div>
+
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>背景</span>
+                <output id="backgroundOutput">auto</output>
+              </div>
+              <div class="chip-grid" data-setting="background">
+                <button class="choice-chip active" type="button" data-value="auto">Auto</button>
+                <button class="choice-chip" type="button" data-value="opaque">Opaque</button>
+                <button class="choice-chip disabled" type="button" data-value="transparent" aria-disabled="true" title="gpt-image-2 当前不支持透明背景">
+                  Transparent
+                </button>
+              </div>
+            </div>
+
+            <div class="parameter-block">
+              <div class="parameter-head">
+                <span>审核强度</span>
+                <output id="moderationOutput">auto</output>
+              </div>
+              <div class="chip-grid" data-setting="moderation">
+                <button class="choice-chip active" type="button" data-value="auto">Auto</button>
+                <button class="choice-chip" type="button" data-value="low">Low</button>
+              </div>
+            </div>
+
+            <div class="parameter-block edit-only" hidden>
+              <div class="parameter-head">
+                <span>参考保真</span>
+                <output id="fidelityOutput">自动高保真</output>
+              </div>
+              <div class="chip-grid">
+                <button class="choice-chip active disabled" type="button" aria-disabled="true">gpt-image-2 固定</button>
+              </div>
+            </div>
+
+            <details class="advanced-panel">
+              <summary>高级参数</summary>
+              <div class="advanced-grid">
+                <div class="parameter-block">
+                  <div class="parameter-head">
+                    <span>流式预览</span>
+                    <output id="streamOutput">off</output>
+                  </div>
+                  <div class="chip-grid" data-setting="stream">
+                    <button class="choice-chip active" type="button" data-value="false">Off</button>
+                    <button class="choice-chip" type="button" data-value="true">On</button>
+                  </div>
+                </div>
+                <div class="parameter-block">
+                  <div class="parameter-head">
+                    <span>局部预览张数</span>
+                    <output id="partialImagesOutput">0</output>
+                  </div>
+                  <div class="chip-grid" data-setting="partial_images">
+                    <button class="choice-chip active" type="button" data-value="0">0 张</button>
+                    <button class="choice-chip" type="button" data-value="1">1 张</button>
+                    <button class="choice-chip" type="button" data-value="2">2 张</button>
+                    <button class="choice-chip" type="button" data-value="3">3 张</button>
+                  </div>
+                </div>
+                <label class="field small">
+                  <span>用户标识</span>
+                  <input id="userTagInput" type="text" spellcheck="false" placeholder="可选" />
+                </label>
+              </div>
+            </details>
+          </section>
+
+          <button class="primary-action" id="runButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5.25v13.5L18.5 12 8 5.25Z" />
+            </svg>
+            <span id="runButtonText">生成图片</span>
+          </button>
+        </aside>
+
+        <section class="stage-panel panel" aria-label="图片舞台">
+          <div class="stage-toolbar">
+            <div>
+              <p class="eyebrow">Canvas</p>
+              <h2 id="stageTitle">生成结果</h2>
+            </div>
+            <div class="stage-actions">
+              <button class="ghost-button" id="downloadSelectedButton" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v10" />
+                  <path d="m7.5 10 4.5 4.5 4.5-4.5" />
+                  <path d="M5 19h14" />
+                </svg>
+                下载
+              </button>
+              <button class="ghost-button" id="useSelectedForEditButton" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m4 20 5.25-1.25L19.5 8.5a2.5 2.5 0 0 0-3.5-3.5L5.75 15.25 4 20Z" />
+                  <path d="m14.5 6.5 3 3" />
+                </svg>
+                编辑此图
+              </button>
+            </div>
+          </div>
+
+          <div class="notice-bar" id="noticeBar" hidden></div>
+          <div class="progress-bar" id="progressBar" hidden>
+            <span></span>
+          </div>
+
+          <div class="empty-state" id="emptyState">
+            <div class="empty-mark">
+              <svg viewBox="0 0 64 64" aria-hidden="true">
+                <path d="M12 16h40v32H12z" />
+                <path d="m18 41 10-11 8 8 5-6 7 9" />
+                <circle cx="43" cy="25" r="4" />
+              </svg>
+            </div>
+            <p>输入提示词后生成第一张图。</p>
+          </div>
+
+          <div class="result-grid" id="resultGrid" aria-live="polite"></div>
+
+          <div class="mask-workbench" id="maskWorkbench" hidden>
+            <div class="mask-header">
+              <div>
+                <p class="eyebrow">Mask</p>
+                <h3>涂抹要修改的区域</h3>
+              </div>
+              <div class="mask-actions">
+                <button class="ghost-button compact-text" id="clearMaskButton" type="button">清空</button>
+                <button class="ghost-button compact-text" id="undoMaskButton" type="button">撤销</button>
+              </div>
+            </div>
+            <div class="canvas-wrap" id="canvasWrap">
+              <canvas id="sourceCanvas"></canvas>
+              <canvas id="maskCanvas"></canvas>
+            </div>
+            <div class="brush-row">
+              <label>
+                <span>笔刷</span>
+                <input id="brushSizeInput" type="range" min="8" max="160" value="48" />
+              </label>
+              <span id="maskPaintState">未涂抹时会编辑整张图</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="edit-panel panel" aria-label="编辑素材">
+          <section class="panel-section">
+            <div class="section-heading inline">
+              <div>
+                <p class="eyebrow">Sources</p>
+                <h2>参考图</h2>
+              </div>
+              <button class="icon-button compact" id="clearReferencesButton" type="button" title="清空参考图">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 7h12" />
+                  <path d="M9 7V5h6v2" />
+                  <path d="M9 10v7" />
+                  <path d="M15 10v7" />
+                  <path d="M7 7l1 13h8l1-13" />
+                </svg>
+                <span class="sr-only">清空参考图</span>
+              </button>
+            </div>
+
+            <label class="dropzone" id="dropzone">
+              <input id="imageUploadInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4v11" />
+                <path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
+                <path d="M5 19h14" />
+              </svg>
+              <span>拖入或选择图片</span>
+            </label>
+
+            <div class="reference-list" id="referenceList"></div>
+          </section>
+
+          <section class="panel-section api-guide-section" aria-label="API 直连调用教学">
+            <div class="section-heading inline">
+              <div>
+                <p class="eyebrow">API</p>
+                <h2>直连接口</h2>
+              </div>
+              <span class="counter">URL</span>
+            </div>
+
+            <div class="api-lesson-list">
+              <div class="api-lesson-item">
+                <span>1</span>
+                <div>
+                  <strong>接口地址</strong>
+                  <code id="apiBaseText">https://sub.tohoqing.com/v1</code>
+                </div>
+              </div>
+              <div class="api-lesson-item">
+                <span>2</span>
+                <div>
+                  <strong>生成图片</strong>
+                  <code id="generateEndpointText">/images/generations</code>
+                </div>
+              </div>
+              <div class="api-lesson-item">
+                <span>3</span>
+                <div>
+                  <strong>编辑图片</strong>
+                  <code id="editEndpointText">/images/edits</code>
+                </div>
+              </div>
+            </div>
+
+            <details class="api-code-block" open>
+              <summary>
+                <span>生成调用</span>
+                <button class="ghost-button compact-text" id="copyGenerateCurlButton" type="button">复制</button>
+              </summary>
+              <pre><code id="generateCurlCode"></code></pre>
+            </details>
+
+            <details class="api-code-block">
+              <summary>
+                <span>编辑调用</span>
+                <button class="ghost-button compact-text" id="copyEditCurlButton" type="button">复制</button>
+              </summary>
+              <pre><code id="editCurlCode"></code></pre>
+            </details>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-heading">
+              <p class="eyebrow">Recipe</p>
+              <h2>提示词片段</h2>
+            </div>
+            <div class="recipe-list" id="recipeList"></div>
+          </section>
+
+          <section class="panel-section history-section">
+            <div class="section-heading inline">
+              <div>
+                <p class="eyebrow">History</p>
+                <h2>本次结果</h2>
+              </div>
+              <span class="counter" id="historyCounter">0</span>
+            </div>
+            <div class="history-list" id="historyList"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <template id="resultCardTemplate">
+      <article class="result-card">
+        <button class="result-preview" type="button">
+          <img alt="生成结果" />
+        </button>
+        <div class="result-meta">
+          <span class="result-time"></span>
+          <div class="result-actions">
+            <button class="icon-button compact result-download" type="button" title="下载图片">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4v10" />
+                <path d="m7.5 10 4.5 4.5 4.5-4.5" />
+                <path d="M5 19h14" />
+              </svg>
+              <span class="sr-only">下载图片</span>
+            </button>
+            <button class="icon-button compact result-edit" type="button" title="作为编辑参考">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4 20 5.25-1.25L19.5 8.5a2.5 2.5 0 0 0-3.5-3.5L5.75 15.25 4 20Z" />
+                <path d="m14.5 6.5 3 3" />
+              </svg>
+              <span class="sr-only">作为编辑参考</span>
+            </button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
