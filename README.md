@@ -1,6 +1,6 @@
 # Toho Image Studio
 
-纯前端 GPT Image 2 生图和编辑工作台，默认部署域名为 `sub.tohoqing.com`。
+纯前端 GPT Image 2 生图和编辑工作台，默认部署域名为 `img.tohoqing.com`。
 
 ## 使用
 
