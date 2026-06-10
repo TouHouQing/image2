@@ -192,6 +192,43 @@ h3 {
   gap: 8px;
 }
 
+.promo-nav {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.promo-toplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.promo-toplink:hover {
+  border-color: rgba(47, 109, 87, 0.42);
+  background: rgba(47, 109, 87, 0.08);
+  color: var(--accent);
+}
+
+.promo-toplink:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.promo-toplink svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .status-pill,
 .fixed-chip,
 .counter {
@@ -848,6 +885,95 @@ input[type="range"] {
   margin-top: 12px;
 }
 
+.promo-section {
+  background: linear-gradient(180deg, rgba(47, 109, 87, 0.06), rgba(255, 255, 255, 0));
+}
+
+.promo-resource-list {
+  display: grid;
+  gap: 8px;
+}
+
+.promo-resource-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: rgba(255, 255, 255, 0.52);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.promo-resource-card:hover {
+  border-color: rgba(47, 109, 87, 0.44);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.promo-resource-card:active {
+  transform: translateY(1px) scale(0.995);
+}
+
+.promo-resource-card > svg {
+  color: var(--ink-muted);
+}
+
+.promo-resource-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(47, 109, 87, 0.2);
+  border-radius: var(--radius-small);
+  background: rgba(47, 109, 87, 0.1);
+  color: var(--accent);
+}
+
+.promo-resource-icon.amber {
+  border-color: rgba(212, 168, 77, 0.28);
+  background: rgba(212, 168, 77, 0.12);
+  color: #8a6320;
+}
+
+.promo-resource-icon.rust {
+  border-color: rgba(154, 91, 68, 0.25);
+  background: rgba(154, 91, 68, 0.1);
+  color: var(--rust);
+}
+
+.promo-resource-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.promo-resource-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.promo-resource-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-resource-copy span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.qq-card {
+  cursor: default;
+}
+
 .api-guide-section {
   display: grid;
   gap: 12px;
@@ -1036,7 +1162,19 @@ input[type="range"] {
   }
 
   .topbar-actions {
+    flex-wrap: wrap;
     justify-content: space-between;
+  }
+
+  .promo-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    order: 3;
+    width: 100%;
+  }
+
+  .promo-toplink {
+    justify-content: center;
   }
 
   .workspace {

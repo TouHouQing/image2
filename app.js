@@ -116,6 +116,7 @@ const elements = {
   editCurlCode: document.querySelector("#editCurlCode"),
   copyGenerateCurlButton: document.querySelector("#copyGenerateCurlButton"),
   copyEditCurlButton: document.querySelector("#copyEditCurlButton"),
+  copyQqButton: document.querySelector("#copyQqButton"),
   historyList: document.querySelector("#historyList"),
   historyCounter: document.querySelector("#historyCounter"),
   recipeList: document.querySelector("#recipeList"),
@@ -267,6 +268,9 @@ function bindEvents() {
     event.preventDefault();
     event.stopPropagation();
     copyGuideText(elements.editCurlCode.textContent, elements.copyEditCurlButton);
+  });
+  elements.copyQqButton.addEventListener("click", () => {
+    copyGuideText(elements.copyQqButton.dataset.copyValue, elements.copyQqButton);
   });
 
   elements.runButton.addEventListener("click", runImageRequest);
