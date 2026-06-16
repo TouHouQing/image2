@@ -1,14 +1,15 @@
 # Toho Image Studio
 
-纯前端 GPT Image 2 生图和编辑工作台，默认部署域名为 `img.tohoqing.com`。
+纯前端 Image2 / Gemini 生图和 Image2 编辑工作台，默认部署域名为 `img.tohoqing.com`。
 
 ## 使用
 
 1. 打开页面。
 2. 输入自己的 API Key。
-3. 输入提示词，按需切换 `quality`、`size`、`n`、`output_format`、`output_compression`、`background`、`moderation`、`stream`、`partial_images` 等参数。
-4. 点击生成。生成结果可以下载，也可以一键进入编辑模式。
-5. 编辑模式支持上传参考图、使用生成图作为参考图、涂抹局部遮罩后再次提交编辑。
+3. 点击“获取模型”，页面会从当前接口的 `/models` 拉取可用模型，并根据模型名自动识别 Image2 或 Gemini。
+4. 选择模型后输入提示词，按需切换 `size`、`n`、`output_format` 等参数；Image2 模型还支持 `quality`、`output_compression`、`background`、`moderation`、`stream`、`partial_images` 等高级参数。
+5. 点击生成。生成结果可以下载；Image2 模式下也可以一键进入编辑模式。
+6. 编辑模式支持上传参考图、使用生成图作为参考图、涂抹局部遮罩后再次提交编辑。
 
 默认会把 API Key、接口地址、提示词和参数缓存到当前浏览器的 `localStorage`，方便下次继续使用。取消“缓存到此浏览器”会清掉本地缓存。
 
@@ -22,14 +23,18 @@
 
 ## 接口地址
 
-页面默认接口为 `https://sub.tohoqing.com/v1`，也可以手动改成任意 OpenAI 兼容接口。用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
+页面默认接口为 `https://sub.tohoqing.com/v1`，Image2 和 Gemini 都默认从这个接口获取模型。也可以手动改成任意 OpenAI 兼容接口；用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
+
+如果直接使用 Google Gemini OpenAI 兼容接口，可以填写类似 `https://generativelanguage.googleapis.com/v1beta/openai` 的地址；页面不会再额外追加 `/v1`。
 
 ## API 调用教学
 
-右侧“直连接口”区域会根据当前页面的接口地址、提示词和参数自动生成两段可复制的 cURL 示例：
+右侧“直连接口”区域会根据当前页面的接口地址、模型、提示词和参数自动生成可复制的 cURL 示例：
 
 - `POST /images/generations`：用 JSON 请求生成图片。
 - `POST /images/edits`：用 multipart form-data 上传参考图并编辑图片。
+
+Gemini 模式下，生成调用会只发送 Gemini OpenAI 兼容生图所需参数；编辑调用会提示切回 Image2 模型。
 
 示例中的 API Key 使用 `$API_KEY` 占位，不会把页面里输入的真实 Key 显示在代码块里。
 

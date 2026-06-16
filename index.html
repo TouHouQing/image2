@@ -94,7 +94,7 @@
               <input id="baseUrlInput" type="url" spellcheck="false" value="https://sub.tohoqing.com/v1" />
             </label>
             <div class="endpoint-actions" aria-label="接口连接测试">
-              <button class="tool-button" id="testEndpointButton" type="button">测试连接</button>
+              <button class="tool-button" id="testEndpointButton" type="button">获取模型</button>
             </div>
           </section>
 
@@ -134,12 +134,29 @@
             <div class="section-heading inline">
               <div>
                 <p class="eyebrow">Model</p>
-                <h2>gpt-image-2</h2>
+                <h2>模型与引擎</h2>
               </div>
-              <span class="fixed-chip">固定</span>
+              <span class="fixed-chip provider-pill" id="modelProviderPill">
+                <span class="status-dot mini"></span>
+                <span id="modelProviderText">Image2</span>
+              </span>
             </div>
 
-            <div class="preset-strip" aria-label="参数预设">
+            <label class="field model-field">
+              <span>模型</span>
+              <div class="model-row">
+                <select id="modelSelect">
+                  <option value="gpt-image-2">gpt-image-2</option>
+                </select>
+                <input id="modelInput" type="text" spellcheck="false" value="gpt-image-2" />
+              </div>
+            </label>
+
+            <p class="model-summary" id="modelSummaryText">
+              默认从 sub.tohoqing.com 获取模型；检测到 Gemini/Imagen 模型时会自动切换到 Gemini 生图模式。
+            </p>
+
+            <div class="preset-strip gpt-only" data-provider-only="gpt" aria-label="参数预设">
               <button class="preset-button active" type="button" data-preset="balanced">均衡</button>
               <button class="preset-button" type="button" data-preset="fast">快速</button>
               <button class="preset-button" type="button" data-preset="detail">精修</button>
@@ -148,7 +165,7 @@
           </section>
 
           <section class="panel-section parameter-stack">
-            <div class="parameter-block">
+            <div class="parameter-block gpt-only" data-provider-only="gpt">
               <div class="parameter-head">
                 <span>质量</span>
                 <output id="qualityOutput">auto</output>
@@ -208,7 +225,7 @@
               </div>
             </div>
 
-            <div class="parameter-block">
+            <div class="parameter-block gpt-only" data-provider-only="gpt">
               <div class="parameter-head">
                 <span>格式</span>
                 <output id="formatOutput">png</output>
@@ -220,7 +237,7 @@
               </div>
             </div>
 
-            <div class="parameter-block compression-block" id="compressionBlock" hidden>
+            <div class="parameter-block compression-block gpt-only" data-provider-only="gpt" id="compressionBlock" hidden>
               <div class="parameter-head">
                 <span>压缩</span>
                 <output id="compressionOutput">90</output>
@@ -234,7 +251,7 @@
               </div>
             </div>
 
-            <div class="parameter-block">
+            <div class="parameter-block gpt-only" data-provider-only="gpt">
               <div class="parameter-head">
                 <span>背景</span>
                 <output id="backgroundOutput">auto</output>
@@ -248,7 +265,7 @@
               </div>
             </div>
 
-            <div class="parameter-block">
+            <div class="parameter-block gpt-only" data-provider-only="gpt">
               <div class="parameter-head">
                 <span>审核强度</span>
                 <output id="moderationOutput">auto</output>
@@ -265,11 +282,11 @@
                 <output id="fidelityOutput">自动高保真</output>
               </div>
               <div class="chip-grid">
-                <button class="choice-chip active disabled" type="button" aria-disabled="true">gpt-image-2 固定</button>
+                <button class="choice-chip active disabled" type="button" aria-disabled="true">跟随当前 image2 模型</button>
               </div>
             </div>
 
-            <details class="advanced-panel">
+            <details class="advanced-panel gpt-only" data-provider-only="gpt">
               <summary>高级参数</summary>
               <div class="advanced-grid">
                 <div class="parameter-block">

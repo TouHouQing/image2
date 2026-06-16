@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import {
+  DEFAULT_BASE_URL,
+  classifyModelId,
+  getGenerationEndpoint,
+  normalizeBaseUrl,
+  pickInitialModel,
+} from "./provider-utils.js";
+
+assert.equal(normalizeBaseUrl(""), DEFAULT_BASE_URL);
+assert.equal(normalizeBaseUrl("sub.tohoqing.com"), "https://sub.tohoqing.com/v1");
+assert.equal(normalizeBaseUrl("https://sub.tohoqing.com/v1/"), "https://sub.tohoqing.com/v1");
+assert.equal(
+  normalizeBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai/"),
+  "https://generativelanguage.googleapis.com/v1beta/openai",
+);
+assert.equal(
+  getGenerationEndpoint("https://generativelanguage.googleapis.com/v1beta/openai"),
+  "https://generativelanguage.googleapis.com/v1beta/openai/images/generations",
+);
+assert.equal(
+  getGenerationEndpoint("sub.tohoqing.com"),
+  "https://sub.tohoqing.com/v1/images/generations",
+);
+
+assert.equal(classifyModelId("gpt-image-2"), "gpt");
+assert.equal(classifyModelId("gemini-2.0-flash-preview-image-generation"), "gemini");
+assert.equal(classifyModelId("imagen-4.0-generate-preview"), "gemini");
+
+assert.equal(
+  pickInitialModel(["gemini-2.0-flash-preview-image-generation", "gpt-image-2"]),
+  "gpt-image-2",
+);
+assert.equal(
+  pickInitialModel(["gemini-2.0-flash-preview-image-generation"], "gpt-image-2"),
+  "gemini-2.0-flash-preview-image-generation",
+);
+assert.equal(
+  pickInitialModel(["imagen-4.0-generate-preview", "gemini-2.0-flash-preview-image-generation"]),
+  "imagen-4.0-generate-preview",
+);
+
+console.log("provider-utils tests passed");

@@ -1,11 +1,24 @@
-const MODEL = "gpt-image-2";
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_MODEL,
+  classifyModelId,
+  getEditEndpoint,
+  getGenerationEndpoint,
+  getProviderForModel,
+  normalizeBaseUrl,
+  pickInitialModel,
+  supportsImageGenerationModel,
+} from "./provider-utils.js";
+
 const SETTINGS_STORAGE_KEY = "toho-image-studio-settings";
 const CACHE_ENABLED_STORAGE_KEY = "toho-image-studio-cache-enabled";
 const LEGACY_API_KEY_STORAGE_KEY = "toho-image-studio-api-key";
-const DEFAULT_BASE_URL = "https://sub.tohoqing.com/v1";
 
 const state = {
   mode: "generate",
+  provider: "gpt",
+  model: DEFAULT_MODEL,
+  availableModels: [],
   apiKey: "",
   cacheEnabled: true,
   baseUrl: DEFAULT_BASE_URL,
@@ -95,6 +108,11 @@ const elements = {
   compressionBlock: document.querySelector("#compressionBlock"),
   compressionInput: document.querySelector("#compressionInput"),
   testEndpointButton: document.querySelector("#testEndpointButton"),
+  modelSelect: document.querySelector("#modelSelect"),
+  modelInput: document.querySelector("#modelInput"),
+  modelProviderPill: document.querySelector("#modelProviderPill"),
+  modelProviderText: document.querySelector("#modelProviderText"),
+  modelSummaryText: document.querySelector("#modelSummaryText"),
   userTagInput: document.querySelector("#userTagInput"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
   noticeBar: document.querySelector("#noticeBar"),
@@ -259,6 +277,17 @@ function bindEvents() {
   });
 
   elements.testEndpointButton.addEventListener("click", testEndpoint);
+  elements.modelSelect.addEventListener("change", (event) => {
+    state.model = event.target.value || DEFAULT_MODEL;
+    applyProviderFromModel();
+    syncControlsFromState();
+    renderAll();
+  });
+  elements.modelInput.addEventListener("input", (event) => {
+    state.model = event.target.value.trim() || DEFAULT_MODEL;
+    applyProviderFromModel();
+    renderAll();
+  });
   elements.copyGenerateCurlButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -315,7 +344,9 @@ function renderConnection() {
   elements.connectionPill.classList.remove("ready", "error");
   if (state.apiKey) {
     elements.connectionPill.classList.add("ready");
-    elements.connectionText.textContent = "Key 已就绪";
+    elements.connectionText.textContent = state.availableModels.length
+      ? `${state.availableModels.length} 个模型`
+      : "Key 已就绪";
   } else {
     elements.connectionText.textContent = "等待 API Key";
   }
@@ -349,6 +380,11 @@ function applyCachedState(cached) {
 
   state.apiKey = typeof cached.apiKey === "string" ? cached.apiKey : state.apiKey;
   state.baseUrl = typeof cached.baseUrl === "string" ? normalizeBaseUrl(cached.baseUrl) : state.baseUrl;
+  state.model = typeof cached.model === "string" && cached.model ? cached.model : state.model;
+  state.provider = ["gpt", "gemini"].includes(cached.provider) ? cached.provider : classifyModelId(state.model);
+  state.availableModels = Array.isArray(cached.availableModels)
+    ? cached.availableModels.filter((model) => typeof model === "string" && model)
+    : state.availableModels;
   state.prompt = typeof cached.prompt === "string" ? cached.prompt : state.prompt;
   state.quality = ["auto", "low", "medium", "high"].includes(cached.quality)
     ? cached.quality
@@ -382,6 +418,9 @@ function persistBrowserCache() {
   const cachePayload = {
     apiKey: state.apiKey,
     baseUrl: normalizeBaseUrl(state.baseUrl),
+    provider: state.provider,
+    model: state.model,
+    availableModels: state.availableModels,
     prompt: state.prompt,
     quality: state.quality,
     size: state.size,
@@ -409,21 +448,29 @@ function clearBrowserCache() {
 }
 
 function renderAll() {
+  applyProviderFromModel();
   document.querySelectorAll("[data-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.mode === state.mode);
   });
 
   const isEdit = state.mode === "edit";
+  const canEdit = supportsEditing();
   document.querySelectorAll(".edit-only").forEach((node) => {
-    node.hidden = !isEdit;
+    node.hidden = !isEdit || !canEdit;
+  });
+  document.querySelector('[data-mode="edit"]').disabled = !canEdit;
+  document.querySelector('[data-mode="edit"]').title = canEdit ? "" : "Gemini 模式暂不支持此编辑工作流";
+  document.querySelectorAll('[data-provider-only="gpt"]').forEach((node) => {
+    node.hidden = state.provider !== "gpt";
   });
 
   elements.promptLabel.textContent = isEdit ? "编辑提示词" : "提示词";
   elements.stageTitle.textContent = isEdit ? "编辑工作区" : "生成结果";
   elements.runButtonText.textContent = isEdit ? "编辑图片" : "生成图片";
-  elements.maskWorkbench.hidden = !isEdit || state.references.length === 0;
+  elements.maskWorkbench.hidden = !isEdit || !canEdit || state.references.length === 0;
 
   renderConnection();
+  renderModelSelect();
   renderParameterButtons();
   syncControlsFromState();
   renderReferences();
@@ -436,6 +483,10 @@ function syncControlsFromState() {
   elements.apiKeyInput.value = state.apiKey;
   elements.rememberKeyToggle.checked = state.cacheEnabled;
   elements.promptInput.value = state.prompt;
+  elements.modelSelect.value = state.model;
+  if (document.activeElement !== elements.modelInput && elements.modelInput.value !== state.model) {
+    elements.modelInput.value = state.model;
+  }
   elements.countInput.value = String(state.n);
   document.querySelector("#countOutput").textContent = String(state.n);
   elements.compressionInput.value = String(state.output_compression);
@@ -443,7 +494,7 @@ function syncControlsFromState() {
   elements.customWidthInput.value = String(state.customWidth);
   elements.customHeightInput.value = String(state.customHeight);
   elements.customSizeRow.hidden = state.size !== "custom";
-  elements.compressionBlock.hidden = state.output_format === "png";
+  elements.compressionBlock.hidden = state.provider !== "gpt" || state.output_format === "png";
   elements.userTagInput.value = state.user;
   elements.baseUrlInput.value = normalizeBaseUrl(state.baseUrl);
   state.baseUrl = elements.baseUrlInput.value;
@@ -456,9 +507,45 @@ function syncControlsFromState() {
   document.querySelector("#moderationOutput").textContent = state.moderation;
   document.querySelector("#streamOutput").textContent = state.stream ? "on" : "off";
   document.querySelector("#partialImagesOutput").textContent = String(state.partial_images);
-  document.querySelector("#fidelityOutput").textContent = "自动高保真";
+  document.querySelector("#fidelityOutput").textContent = `${state.model} 高保真`;
+  renderProviderSummary();
   updateApiGuide();
   persistBrowserCache();
+}
+
+function applyProviderFromModel() {
+  state.provider = classifyModelId(state.model);
+  if (state.provider !== "gpt") {
+    state.mode = "generate";
+    state.stream = false;
+    state.partial_images = 0;
+  }
+}
+
+function supportsEditing() {
+  return getProviderForModel(state.model).editable;
+}
+
+function renderModelSelect() {
+  const options = [...new Set([state.model, ...state.availableModels, DEFAULT_MODEL].filter(Boolean))];
+  elements.modelSelect.innerHTML = "";
+  options.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    elements.modelSelect.append(option);
+  });
+  elements.modelSelect.value = state.model;
+}
+
+function renderProviderSummary() {
+  const provider = getProviderForModel(state.model);
+  elements.modelProviderPill.dataset.provider = provider.id;
+  elements.modelProviderText.textContent = provider.label;
+  elements.modelSummaryText.textContent =
+    provider.id === "gemini"
+      ? "Gemini 生图使用当前接口的 OpenAI 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
+      : "Image2 模式支持生成、参考图编辑、遮罩编辑和完整 image2 参数。";
 }
 
 function renderParameterButtons() {
@@ -576,7 +663,10 @@ function renderResults() {
   elements.resultGrid.innerHTML = "";
   elements.emptyState.hidden = state.results.length > 0 || state.mode === "edit";
   elements.downloadSelectedButton.disabled = !state.selectedResultId;
-  elements.useSelectedForEditButton.disabled = !state.selectedResultId;
+  elements.useSelectedForEditButton.disabled = !state.selectedResultId || !supportsEditing();
+  elements.useSelectedForEditButton.title = supportsEditing()
+    ? ""
+    : "切换到 image2 模型后可将结果作为编辑参考";
 
   state.results.forEach((result, index) => {
     const fragment = elements.resultCardTemplate.content.cloneNode(true);
@@ -601,6 +691,8 @@ function renderResults() {
       renderResults();
     });
     downloadButton.addEventListener("click", () => downloadResult(result));
+    editButton.disabled = !supportsEditing();
+    editButton.title = supportsEditing() ? "作为编辑参考" : "切换到 image2 模型后可编辑";
     editButton.addEventListener("click", () => useResultForEdit(result));
     elements.resultGrid.append(fragment);
   });
@@ -618,7 +710,7 @@ function renderHistory() {
       <img src="${result.dataUrl}" alt="">
       <span class="history-info">
         <strong>${escapeHtml(result.mode === "edit" ? "编辑结果" : "生成结果")}</strong>
-        <span>${escapeHtml(result.size || "auto")} · ${escapeHtml(result.format)}</span>
+        <span>${escapeHtml(result.model || DEFAULT_MODEL)} · ${escapeHtml(result.size || "auto")} · ${escapeHtml(result.format)}</span>
       </span>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
     `;
@@ -671,6 +763,9 @@ function validateRequest() {
   if (state.background === "transparent") {
     return "gpt-image-2 当前不支持 transparent 背景，请选择 auto 或 opaque。";
   }
+  if (state.mode === "edit" && !supportsEditing()) {
+    return "当前模型不支持此编辑工作流，请切换到 image2 模型后再编辑。";
+  }
   if (state.mode === "edit" && !state.references.length) {
     return "编辑模式需要至少上传一张参考图。";
   }
@@ -679,7 +774,7 @@ function validateRequest() {
 
 async function generateImages() {
   const body = buildGeneratePayload();
-  const endpoint = `${normalizeBaseUrl(state.baseUrl)}/images/generations`;
+  const endpoint = getGenerationEndpoint(state.baseUrl);
 
   if (state.stream) {
     const streamedResults = await requestStreamingJsonImages(endpoint, body, "generate");
@@ -694,7 +789,7 @@ async function generateImages() {
 
 async function editImages() {
   const formData = new FormData();
-  formData.append("model", MODEL);
+  formData.append("model", state.model);
   formData.append("prompt", state.prompt);
   appendOptionalFormData(formData, "n", state.n);
   appendOptionalFormData(formData, "size", getResolvedSize());
@@ -722,7 +817,7 @@ async function editImages() {
     formData.append("mask", maskBlob, "mask.png");
   }
 
-  const endpoint = `${normalizeBaseUrl(state.baseUrl)}/images/edits`;
+  const endpoint = getEditEndpoint(state.baseUrl);
   if (state.stream) {
     const streamedResults = await requestStreamingFormImages(endpoint, formData, "edit");
     if (streamedResults.length) return;
@@ -733,8 +828,18 @@ async function editImages() {
 }
 
 function buildGeneratePayload() {
+  if (state.provider === "gemini") {
+    return {
+      model: state.model,
+      prompt: state.prompt,
+      n: state.n,
+      size: getGeminiSize(),
+      response_format: "b64_json",
+    };
+  }
+
   const payload = {
-    model: MODEL,
+    model: state.model,
     prompt: state.prompt,
     n: state.n,
     size: getResolvedSize(),
@@ -760,8 +865,8 @@ function buildGeneratePayload() {
 
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
-  const generationUrl = `${baseUrl}/images/generations`;
-  const editUrl = `${baseUrl}/images/edits`;
+  const generationUrl = getGenerationEndpoint(baseUrl);
+  const editUrl = getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
   const generatePayload = {
     ...buildGeneratePayload(),
@@ -770,9 +875,11 @@ function updateApiGuide() {
 
   elements.apiBaseText.textContent = baseUrl;
   elements.generateEndpointText.textContent = generationUrl;
-  elements.editEndpointText.textContent = editUrl;
+  elements.editEndpointText.textContent = supportsEditing() ? editUrl : "当前 Gemini 模型不支持编辑工作流";
   elements.generateCurlCode.textContent = buildGenerateCurl(generationUrl, generatePayload);
-  elements.editCurlCode.textContent = buildEditCurl(editUrl, prompt);
+  elements.editCurlCode.textContent = supportsEditing()
+    ? buildEditCurl(editUrl, prompt)
+    : "Gemini 模式下请使用生成调用；如需参考图编辑，请在模型下拉中选择 image2 模型。";
 }
 
 function buildGenerateCurl(endpoint, payload) {
@@ -790,7 +897,7 @@ function buildEditCurl(endpoint, prompt) {
     'export API_KEY="你的 API Key"',
     `curl "${endpoint}" \\`,
     '  -H "Authorization: Bearer $API_KEY" \\',
-    `  -F model="${MODEL}" \\`,
+    `  -F model="${state.model}" \\`,
     `  -F prompt="${escapeCurlFormValue(prompt)}" \\`,
     '  -F image="@/path/to/reference.png" \\',
     `  -F size="${getResolvedSize()}" \\`,
@@ -965,6 +1072,8 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
       return {
         id: crypto.randomUUID(),
         mode,
+        provider: state.provider,
+        model: state.model,
         prompt,
         revisedPrompt: item.revised_prompt || responseJson.revised_prompt || "",
         dataUrl: b64 ? `data:image/${inferredFormat};base64,${b64}` : url,
@@ -1027,12 +1136,12 @@ async function testEndpoint() {
   persistBrowserCache();
 
   if (!state.apiKey) {
-    showNotice("请输入 API Key 后再测试连接。", "error");
+    showNotice("请输入 API Key 后再获取模型。", "error");
     return;
   }
 
   elements.testEndpointButton.disabled = true;
-  elements.testEndpointButton.textContent = "测试中";
+  elements.testEndpointButton.textContent = "获取中";
   try {
     const response = await fetch(`${state.baseUrl}/models`, {
       headers: {
@@ -1041,20 +1150,27 @@ async function testEndpoint() {
     });
     if (!response.ok) throw await readApiError(response);
     const json = await response.json();
-    const models = Array.isArray(json?.data) ? json.data.map((item) => item.id).filter(Boolean) : [];
-    const hasImageModel = models.includes(MODEL);
+    const models = Array.isArray(json?.data)
+      ? json.data.map((item) => item.id || item.name).filter(Boolean)
+      : [];
+    const imageModels = models.filter(supportsImageGenerationModel);
+    state.availableModels = imageModels.length ? imageModels : models;
+    state.model = pickInitialModel(state.availableModels, state.model);
+    applyProviderFromModel();
+    syncControlsFromState();
+    renderAll();
     showNotice(
-      hasImageModel
-        ? `连接正常，已检测到 ${MODEL}。`
-        : `连接正常，但模型列表里没有 ${MODEL}，请确认接口权限。`,
-      hasImageModel ? "success" : "error",
+      state.availableModels.length
+        ? `已获取 ${state.availableModels.length} 个模型，当前使用 ${state.model}。`
+        : "连接正常，但模型列表为空。你仍可手动输入接口支持的模型。",
+      state.availableModels.length ? "success" : "error",
     );
   } catch (error) {
     showNotice(formatRequestError(error), "error");
     elements.connectionPill.classList.add("error");
   } finally {
     elements.testEndpointButton.disabled = false;
-    elements.testEndpointButton.textContent = "测试连接";
+    elements.testEndpointButton.textContent = "获取模型";
   }
 }
 
@@ -1100,6 +1216,11 @@ function getResolvedSize() {
   return state.size;
 }
 
+function getGeminiSize() {
+  const size = getResolvedSize();
+  return size === "auto" ? "1024x1024" : size;
+}
+
 function validateCustomSize(width, height) {
   if (!Number.isFinite(width) || !Number.isFinite(height)) {
     return "自定义尺寸需要输入宽和高。";
@@ -1135,15 +1256,6 @@ function appendOptionalFormData(formData, key, value) {
   formData.append(key, String(value));
 }
 
-function normalizeBaseUrl(url) {
-  let normalized = String(url || DEFAULT_BASE_URL).trim();
-  if (!normalized) normalized = DEFAULT_BASE_URL;
-  if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
-  normalized = normalized.replace(/\/+$/, "");
-  if (!/\/v\d+$/i.test(normalized)) normalized = `${normalized}/v1`;
-  return normalized;
-}
-
 function isSupportedSize(size) {
   return (
     ["auto", "1024x1024", "1536x1024", "1024x1536", "custom"].includes(size) ||
@@ -1169,18 +1281,27 @@ function downloadSelected() {
 function downloadResult(result) {
   const anchor = document.createElement("a");
   anchor.href = result.dataUrl;
-  anchor.download = `toho-${MODEL}-${new Date(result.createdAt).toISOString().replace(/[:.]/g, "-")}.${result.format}`;
+  const modelSlug = String(result.model || state.model || DEFAULT_MODEL).replace(/[^a-z0-9._-]+/gi, "-");
+  anchor.download = `toho-${modelSlug}-${new Date(result.createdAt).toISOString().replace(/[:.]/g, "-")}.${result.format}`;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
 }
 
 async function useSelectedForEdit() {
+  if (!supportsEditing()) {
+    showNotice("请先切换到 image2 模型，再把结果作为编辑参考。", "error");
+    return;
+  }
   const selected = getSelectedResult();
   if (selected) await useResultForEdit(selected);
 }
 
 async function useResultForEdit(result) {
+  if (!supportsEditing()) {
+    showNotice("请先切换到 image2 模型，再把结果作为编辑参考。", "error");
+    return;
+  }
   const blob = await fetch(result.dataUrl).then((response) => response.blob());
   const file = new File([blob], `generated-${result.id}.${result.format}`, {
     type: blob.type || `image/${result.format}`,
