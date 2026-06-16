@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import {
   DEFAULT_BASE_URL,
+  buildGeminiChatPayload,
   buildGeminiGeneratePayload,
-  buildGeminiImagePayload,
   classifyModelId,
+  extractChatCompletionImageItems,
   extractGeminiImageItems,
+  getChatCompletionsEndpoint,
   getGeminiGenerationEndpoint,
   getGenerationEndpointForModel,
   getGenerationEndpoint,
@@ -33,6 +35,10 @@ assert.equal(
   "https://sub.tohoqing.com/v1/images/generations",
 );
 assert.equal(
+  getChatCompletionsEndpoint("sub.tohoqing.com"),
+  "https://sub.tohoqing.com/v1/chat/completions",
+);
+assert.equal(
   getGeminiGenerationEndpoint(
     "https://generativelanguage.googleapis.com/v1beta/openai",
     "gemini-2.5-flash-image",
@@ -41,11 +47,11 @@ assert.equal(
 );
 assert.equal(
   getGeminiGenerationEndpoint("https://sub.tohoqing.com/v1", "models/gemini-2.5-flash-image"),
-  "https://sub.tohoqing.com/v1/images/generations",
+  "https://sub.tohoqing.com/v1/chat/completions",
 );
 assert.equal(
   getGenerationEndpointForModel("https://sub.tohoqing.com/v1", "gemini-3.1-flash-image"),
-  "https://sub.tohoqing.com/v1/images/generations",
+  "https://sub.tohoqing.com/v1/chat/completions",
 );
 assert.equal(
   getGenerationEndpointForModel(
@@ -54,7 +60,7 @@ assert.equal(
   ),
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
 );
-assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "images");
+assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "chat");
 assert.equal(getGeminiModeForBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), "native");
 assert.equal(
   isGoogleGeminiEndpoint("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-image:generateContent"),
@@ -73,12 +79,16 @@ assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
     responseModalities: ["TEXT", "IMAGE"],
   },
 });
-assert.deepEqual(buildGeminiImagePayload("gemini-3.1-flash-image", "画一只猫", { n: 2, size: "1024x1024" }), {
+assert.deepEqual(buildGeminiChatPayload("gemini-3.1-flash-image", "画一只猫"), {
   model: "gemini-3.1-flash-image",
-  prompt: "画一只猫",
-  response_format: "b64_json",
-  n: 2,
-  size: "1024x1024",
+  messages: [
+    {
+      role: "user",
+      content: "画一只猫",
+    },
+  ],
+  modalities: ["text", "image"],
+  stream: false,
 });
 assert.deepEqual(
   extractGeminiImageItems({
@@ -97,6 +107,25 @@ assert.deepEqual(
   [
     { b64: "iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "ok" },
     { b64: "/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
+  ],
+);
+assert.deepEqual(
+  extractChatCompletionImageItems({
+    choices: [
+      {
+        message: {
+          content: "ok",
+          images: [
+            { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgoAAA" } },
+            { imageUrl: { url: "data:image/jpeg;base64,/9j/4AAQ" } },
+          ],
+        },
+      },
+    ],
+  }),
+  [
+    { dataUrl: "data:image/png;base64,iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "ok" },
+    { dataUrl: "data:image/jpeg;base64,/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
   ],
 );
 assert.equal(classifyModelId("gpt-image-2"), "gpt");

@@ -85,8 +85,12 @@ export function getGenerationEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/images/generations`;
 }
 
+export function getChatCompletionsEndpoint(baseUrl) {
+  return `${normalizeBaseUrl(baseUrl)}/chat/completions`;
+}
+
 export function getGeminiGenerationEndpoint(baseUrl, modelId) {
-  if (!isGoogleGeminiBaseUrl(baseUrl)) return getGenerationEndpoint(baseUrl);
+  if (!isGoogleGeminiBaseUrl(baseUrl)) return getChatCompletionsEndpoint(baseUrl);
   const normalizedBase = normalizeBaseUrl(baseUrl)
     .replace(/\/openai$/i, "")
     .replace(/\/+$/, "");
@@ -108,7 +112,7 @@ export function isGoogleGeminiBaseUrl(baseUrl) {
 }
 
 export function getGeminiModeForBaseUrl(baseUrl) {
-  return isGoogleGeminiBaseUrl(baseUrl) ? "native" : "images";
+  return isGoogleGeminiBaseUrl(baseUrl) ? "native" : "chat";
 }
 
 export function isGoogleGeminiEndpoint(endpoint) {
@@ -129,22 +133,18 @@ export function buildGeminiGeneratePayload(prompt) {
   };
 }
 
-export function buildGeminiImagePayload(model, prompt, options = {}) {
+export function buildGeminiChatPayload(model, prompt) {
   const payload = {
     model,
-    prompt,
-    response_format: "b64_json",
+    messages: [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    modalities: ["text", "image"],
+    stream: false,
   };
-
-  if (options.n) {
-    payload.n = options.n;
-  }
-  if (options.size && options.size !== "auto") {
-    payload.size = options.size;
-  }
-  if (options.extra_body && Object.keys(options.extra_body).length) {
-    payload.extra_body = options.extra_body;
-  }
 
   return payload;
 }
@@ -173,4 +173,57 @@ export function extractGeminiImageItems(responseJson) {
   });
 
   return items;
+}
+
+export function extractChatCompletionImageItems(responseJson) {
+  const choices = Array.isArray(responseJson?.choices) ? responseJson.choices : [];
+  const items = [];
+
+  choices.forEach((choice) => {
+    const message = choice?.message || choice?.delta || {};
+    const revisedPrompt = typeof message.content === "string" ? message.content : "";
+    const images = [
+      ...(Array.isArray(message.images) ? message.images : []),
+      ...(Array.isArray(message.content_parts) ? message.content_parts : []),
+      ...(Array.isArray(message.content) ? message.content : []),
+    ];
+
+    images.forEach((image) => {
+      const url =
+        image?.image_url?.url ||
+        image?.imageUrl?.url ||
+        image?.image?.url ||
+        image?.url ||
+        image?.data_url ||
+        "";
+      const b64 =
+        image?.b64_json ||
+        image?.image_base64 ||
+        image?.base64 ||
+        image?.data ||
+        "";
+
+      if (url) {
+        items.push({
+          dataUrl: url,
+          mimeType: getMimeTypeFromDataUrl(url),
+          revisedPrompt,
+        });
+      } else if (b64) {
+        const mimeType = image?.mime_type || image?.mimeType || "image/png";
+        items.push({
+          dataUrl: `data:${mimeType};base64,${b64}`,
+          mimeType,
+          revisedPrompt,
+        });
+      }
+    });
+  });
+
+  return items;
+}
+
+function getMimeTypeFromDataUrl(dataUrl) {
+  const match = String(dataUrl || "").match(/^data:([^;,]+)[;,]/i);
+  return match?.[1] || "";
 }

@@ -1,9 +1,10 @@
 import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  buildGeminiChatPayload,
   buildGeminiGeneratePayload,
-  buildGeminiImagePayload,
   classifyModelId,
+  extractChatCompletionImageItems,
   extractGeminiImageItems,
   getEditEndpoint,
   getGeminiModeForBaseUrl,
@@ -568,7 +569,7 @@ function renderProviderSummary() {
     provider.id === "gemini"
       ? geminiMode === "native"
         ? "Gemini 生图使用 Google 原生 generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
-        : "Gemini 生图使用当前接口的 /images/generations 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
+        : "Gemini 生图使用当前接口的 /chat/completions 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
       : "Image2 模式支持生成、参考图编辑、遮罩编辑和完整 image2 参数。";
 }
 
@@ -855,7 +856,7 @@ function buildGeneratePayload() {
   if (state.provider === "gemini") {
     return getGeminiModeForBaseUrl(state.baseUrl) === "native"
       ? buildGeminiGeneratePayload(state.prompt)
-      : buildGeminiImagePayload(state.model, state.prompt, getGeminiImageOptions());
+      : buildGeminiChatPayload(state.model, state.prompt);
   }
 
   const payload = {
@@ -883,14 +884,6 @@ function buildGeneratePayload() {
   return payload;
 }
 
-function getGeminiImageOptions() {
-  const size = getResolvedSize();
-  return {
-    n: state.n,
-    size,
-  };
-}
-
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
   const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
@@ -899,7 +892,7 @@ function updateApiGuide() {
   const generatePayload = state.provider === "gemini"
     ? (getGeminiModeForBaseUrl(baseUrl) === "native"
       ? buildGeminiGeneratePayload(prompt)
-      : buildGeminiImagePayload(state.model, prompt, getGeminiImageOptions()))
+      : buildGeminiChatPayload(state.model, prompt))
     : {
     ...buildGeneratePayload(),
     prompt,
@@ -1097,6 +1090,23 @@ function parseSseEvent(eventChunk) {
 }
 
 function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
+  const chatImageItems = extractChatCompletionImageItems(responseJson);
+  if (chatImageItems.length) {
+    return chatImageItems.map((item) => ({
+      id: crypto.randomUUID(),
+      mode,
+      provider: state.provider,
+      model: state.model,
+      prompt,
+      revisedPrompt: item.revisedPrompt || "",
+      dataUrl: item.dataUrl,
+      format: inferImageFormat("", item.dataUrl) || mimeTypeToFormat(item.mimeType) || state.output_format,
+      size: getResolvedSize(),
+      createdAt: Date.now(),
+      fromStream,
+    }));
+  }
+
   const geminiItems = extractGeminiImageItems(responseJson);
   if (geminiItems.length) {
     return geminiItems.map((item) => ({
