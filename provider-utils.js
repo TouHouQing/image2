@@ -63,11 +63,16 @@ export function pickFetchedModel(models) {
 export function getModelSelectState(models, currentModel = "") {
   const options = [...new Set((Array.isArray(models) ? models : []).filter(Boolean))];
   const hasOptions = options.length > 0;
+  const selectedValue = hasOptions && options.includes(currentModel)
+    ? currentModel
+    : hasOptions
+      ? pickFetchedModel(options)
+      : "";
   return {
     options,
     placeholder: hasOptions ? "请选择已获取模型" : "请先获取模型",
     disabled: !hasOptions,
-    selectedValue: hasOptions && options.includes(currentModel) ? currentModel : "",
+    selectedValue,
     lockInput: hasOptions,
   };
 }
@@ -81,6 +86,7 @@ export function getGenerationEndpoint(baseUrl) {
 }
 
 export function getGeminiGenerationEndpoint(baseUrl, modelId) {
+  if (!isGoogleGeminiBaseUrl(baseUrl)) return getGenerationEndpoint(baseUrl);
   const normalizedBase = normalizeBaseUrl(baseUrl)
     .replace(/\/openai$/i, "")
     .replace(/\/+$/, "");
@@ -88,8 +94,21 @@ export function getGeminiGenerationEndpoint(baseUrl, modelId) {
   return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:generateContent`;
 }
 
+export function getGenerationEndpointForModel(baseUrl, modelId) {
+  if (classifyModelId(modelId) !== "gemini") return getGenerationEndpoint(baseUrl);
+  return getGeminiGenerationEndpoint(baseUrl, modelId);
+}
+
 export function getEditEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/images/edits`;
+}
+
+export function isGoogleGeminiBaseUrl(baseUrl) {
+  return /^https:\/\/generativelanguage\.googleapis\.com\//i.test(normalizeBaseUrl(baseUrl));
+}
+
+export function getGeminiModeForBaseUrl(baseUrl) {
+  return isGoogleGeminiBaseUrl(baseUrl) ? "native" : "images";
 }
 
 export function isGoogleGeminiEndpoint(endpoint) {
@@ -108,6 +127,26 @@ export function buildGeminiGeneratePayload(prompt) {
       responseModalities: ["TEXT", "IMAGE"],
     },
   };
+}
+
+export function buildGeminiImagePayload(model, prompt, options = {}) {
+  const payload = {
+    model,
+    prompt,
+    response_format: "b64_json",
+  };
+
+  if (options.n) {
+    payload.n = options.n;
+  }
+  if (options.size && options.size !== "auto") {
+    payload.size = options.size;
+  }
+  if (options.extra_body && Object.keys(options.extra_body).length) {
+    payload.extra_body = options.extra_body;
+  }
+
+  return payload;
 }
 
 export function extractGeminiImageItems(responseJson) {

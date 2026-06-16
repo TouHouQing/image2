@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_BASE_URL,
   buildGeminiGeneratePayload,
+  buildGeminiImagePayload,
   classifyModelId,
   extractGeminiImageItems,
   getGeminiGenerationEndpoint,
+  getGenerationEndpointForModel,
   getGenerationEndpoint,
   getModelSelectState,
+  getGeminiModeForBaseUrl,
+  isGoogleGeminiBaseUrl,
   isGoogleGeminiEndpoint,
   normalizeBaseUrl,
   pickInitialModel,
@@ -37,12 +41,27 @@ assert.equal(
 );
 assert.equal(
   getGeminiGenerationEndpoint("https://sub.tohoqing.com/v1", "models/gemini-2.5-flash-image"),
-  "https://sub.tohoqing.com/v1/models/gemini-2.5-flash-image:generateContent",
+  "https://sub.tohoqing.com/v1/images/generations",
 );
+assert.equal(
+  getGenerationEndpointForModel("https://sub.tohoqing.com/v1", "gemini-3.1-flash-image"),
+  "https://sub.tohoqing.com/v1/images/generations",
+);
+assert.equal(
+  getGenerationEndpointForModel(
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+    "gemini-3.1-flash-image",
+  ),
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
+);
+assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "images");
+assert.equal(getGeminiModeForBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), "native");
 assert.equal(
   isGoogleGeminiEndpoint("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-image:generateContent"),
   true,
 );
+assert.equal(isGoogleGeminiBaseUrl("https://sub.tohoqing.com/v1"), false);
+assert.equal(isGoogleGeminiBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), true);
 assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
   contents: [
     {
@@ -53,6 +72,13 @@ assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
   generationConfig: {
     responseModalities: ["TEXT", "IMAGE"],
   },
+});
+assert.deepEqual(buildGeminiImagePayload("gemini-3.1-flash-image", "画一只猫", { n: 2, size: "1024x1024" }), {
+  model: "gemini-3.1-flash-image",
+  prompt: "画一只猫",
+  response_format: "b64_json",
+  n: 2,
+  size: "1024x1024",
 });
 assert.deepEqual(
   extractGeminiImageItems({
@@ -73,7 +99,6 @@ assert.deepEqual(
     { b64: "/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
   ],
 );
-
 assert.equal(classifyModelId("gpt-image-2"), "gpt");
 assert.equal(classifyModelId("gemini-2.0-flash-preview-image-generation"), "gemini");
 assert.equal(classifyModelId("imagen-4.0-generate-preview"), "gemini");
@@ -104,7 +129,17 @@ assert.deepEqual(
     options: ["gemini-2.0-flash-preview-image-generation"],
     placeholder: "请选择已获取模型",
     disabled: false,
-    selectedValue: "",
+    selectedValue: "gemini-2.0-flash-preview-image-generation",
+    lockInput: true,
+  },
+);
+assert.deepEqual(
+  getModelSelectState(["gpt-image-2"], "gemini-2.0-flash-preview-image-generation"),
+  {
+    options: ["gpt-image-2"],
+    placeholder: "请选择已获取模型",
+    disabled: false,
+    selectedValue: "gpt-image-2",
     lockInput: true,
   },
 );

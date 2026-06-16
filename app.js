@@ -2,11 +2,12 @@ import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   buildGeminiGeneratePayload,
+  buildGeminiImagePayload,
   classifyModelId,
   extractGeminiImageItems,
   getEditEndpoint,
-  getGeminiGenerationEndpoint,
-  getGenerationEndpoint,
+  getGeminiModeForBaseUrl,
+  getGenerationEndpointForModel,
   getModelSelectState,
   getProviderForModel,
   isGoogleGeminiEndpoint,
@@ -486,10 +487,10 @@ function renderAll() {
 }
 
 function syncControlsFromState() {
+  applyProviderFromModel();
   elements.apiKeyInput.value = state.apiKey;
   elements.rememberKeyToggle.checked = state.cacheEnabled;
   elements.promptInput.value = state.prompt;
-  elements.modelSelect.value = state.model;
   if (document.activeElement !== elements.modelInput && elements.modelInput.value !== state.model) {
     elements.modelInput.value = state.model;
   }
@@ -520,6 +521,9 @@ function syncControlsFromState() {
 }
 
 function applyProviderFromModel() {
+  if (state.availableModels.length && !state.availableModels.includes(state.model)) {
+    state.model = pickFetchedModel(state.availableModels);
+  }
   state.provider = classifyModelId(state.model);
   if (state.provider !== "gpt") {
     state.mode = "generate";
@@ -534,6 +538,10 @@ function supportsEditing() {
 
 function renderModelSelect() {
   const selectState = getModelSelectState(state.availableModels, state.model);
+  if (selectState.selectedValue && selectState.selectedValue !== state.model) {
+    state.model = selectState.selectedValue;
+    applyProviderFromModel();
+  }
   elements.modelSelect.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
@@ -555,9 +563,12 @@ function renderProviderSummary() {
   const provider = getProviderForModel(state.model);
   elements.modelProviderPill.dataset.provider = provider.id;
   elements.modelProviderText.textContent = provider.label;
+  const geminiMode = getGeminiModeForBaseUrl(state.baseUrl);
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
-      ? "Gemini 生图使用当前接口的 OpenAI 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
+      ? geminiMode === "native"
+        ? "Gemini 生图使用 Google 原生 generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
+        : "Gemini 生图使用当前接口的 /images/generations 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
       : "Image2 模式支持生成、参考图编辑、遮罩编辑和完整 image2 参数。";
 }
 
@@ -842,7 +853,9 @@ async function editImages() {
 
 function buildGeneratePayload() {
   if (state.provider === "gemini") {
-    return buildGeminiGeneratePayload(state.prompt);
+    return getGeminiModeForBaseUrl(state.baseUrl) === "native"
+      ? buildGeminiGeneratePayload(state.prompt)
+      : buildGeminiImagePayload(state.model, state.prompt, getGeminiImageOptions());
   }
 
   const payload = {
@@ -870,10 +883,12 @@ function buildGeneratePayload() {
   return payload;
 }
 
-function getGenerationEndpointForModel(baseUrl, modelId) {
-  return classifyModelId(modelId) === "gemini"
-    ? getGeminiGenerationEndpoint(baseUrl, modelId)
-    : getGenerationEndpoint(baseUrl);
+function getGeminiImageOptions() {
+  const size = getResolvedSize();
+  return {
+    n: state.n,
+    size,
+  };
 }
 
 function updateApiGuide() {
@@ -881,7 +896,11 @@ function updateApiGuide() {
   const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
   const editUrl = getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
-  const generatePayload = state.provider === "gemini" ? buildGeminiGeneratePayload(prompt) : {
+  const generatePayload = state.provider === "gemini"
+    ? (getGeminiModeForBaseUrl(baseUrl) === "native"
+      ? buildGeminiGeneratePayload(prompt)
+      : buildGeminiImagePayload(state.model, prompt, getGeminiImageOptions()))
+    : {
     ...buildGeneratePayload(),
     prompt,
   };
@@ -956,25 +975,6 @@ async function copyGuideText(text, button) {
   window.setTimeout(() => {
     button.textContent = originalText;
   }, 1400);
-}
-
-async function postJson(endpoint, payload) {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(isGoogleGeminiEndpoint(endpoint)
-        ? { "x-goog-api-key": state.apiKey }
-        : { Authorization: `Bearer ${state.apiKey}` }),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw await readApiError(response);
-  }
-
-  return response.json();
 }
 
 async function postGenerate(endpoint, payload) {
