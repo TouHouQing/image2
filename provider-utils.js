@@ -80,6 +80,58 @@ export function getGenerationEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/images/generations`;
 }
 
+export function getGeminiGenerationEndpoint(baseUrl, modelId) {
+  const normalizedBase = normalizeBaseUrl(baseUrl)
+    .replace(/\/openai$/i, "")
+    .replace(/\/+$/, "");
+  const normalizedModel = String(modelId || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
+  return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:generateContent`;
+}
+
 export function getEditEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/images/edits`;
+}
+
+export function isGoogleGeminiEndpoint(endpoint) {
+  return /^https:\/\/generativelanguage\.googleapis\.com\//i.test(String(endpoint || ""));
+}
+
+export function buildGeminiGeneratePayload(prompt) {
+  return {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
+  };
+}
+
+export function extractGeminiImageItems(responseJson) {
+  const candidates = Array.isArray(responseJson?.candidates) ? responseJson.candidates : [];
+  const items = [];
+
+  candidates.forEach((candidate) => {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+    const revisedPrompt = parts
+      .map((part) => part?.text)
+      .filter(Boolean)
+      .join("\n");
+
+    parts.forEach((part) => {
+      const inlineData = part?.inlineData || part?.inline_data;
+      const b64 = inlineData?.data;
+      if (!b64) return;
+      items.push({
+        b64,
+        mimeType: inlineData.mimeType || inlineData.mime_type || "",
+        revisedPrompt,
+      });
+    });
+  });
+
+  return items;
 }

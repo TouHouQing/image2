@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import {
   DEFAULT_BASE_URL,
+  buildGeminiGeneratePayload,
   classifyModelId,
+  extractGeminiImageItems,
+  getGeminiGenerationEndpoint,
   getGenerationEndpoint,
   getModelSelectState,
+  isGoogleGeminiEndpoint,
   normalizeBaseUrl,
   pickInitialModel,
   pickFetchedModel,
@@ -23,6 +27,51 @@ assert.equal(
 assert.equal(
   getGenerationEndpoint("sub.tohoqing.com"),
   "https://sub.tohoqing.com/v1/images/generations",
+);
+assert.equal(
+  getGeminiGenerationEndpoint(
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+    "gemini-2.5-flash-image",
+  ),
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+);
+assert.equal(
+  getGeminiGenerationEndpoint("https://sub.tohoqing.com/v1", "models/gemini-2.5-flash-image"),
+  "https://sub.tohoqing.com/v1/models/gemini-2.5-flash-image:generateContent",
+);
+assert.equal(
+  isGoogleGeminiEndpoint("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-image:generateContent"),
+  true,
+);
+assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
+  contents: [
+    {
+      role: "user",
+      parts: [{ text: "画一只猫" }],
+    },
+  ],
+  generationConfig: {
+    responseModalities: ["TEXT", "IMAGE"],
+  },
+});
+assert.deepEqual(
+  extractGeminiImageItems({
+    candidates: [
+      {
+        content: {
+          parts: [
+            { text: "ok" },
+            { inlineData: { mimeType: "image/png", data: "iVBORw0KGgoAAA" } },
+            { inline_data: { mime_type: "image/jpeg", data: "/9j/4AAQ" } },
+          ],
+        },
+      },
+    ],
+  }),
+  [
+    { b64: "iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "ok" },
+    { b64: "/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
+  ],
 );
 
 assert.equal(classifyModelId("gpt-image-2"), "gpt");

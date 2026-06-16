@@ -1,11 +1,15 @@
 import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  buildGeminiGeneratePayload,
   classifyModelId,
+  extractGeminiImageItems,
   getEditEndpoint,
+  getGeminiGenerationEndpoint,
   getGenerationEndpoint,
   getModelSelectState,
   getProviderForModel,
+  isGoogleGeminiEndpoint,
   normalizeBaseUrl,
   pickFetchedModel,
   pickInitialModel,
@@ -782,17 +786,17 @@ function validateRequest() {
 }
 
 async function generateImages() {
+  const endpoint = getGenerationEndpointForModel(state.baseUrl, state.model);
   const body = buildGeneratePayload();
-  const endpoint = getGenerationEndpoint(state.baseUrl);
 
   if (state.stream) {
-    const streamedResults = await requestStreamingJsonImages(endpoint, body, "generate");
+    const streamedResults = await requestStreamingGenerateImages(endpoint, body, "generate");
     if (streamedResults.length) {
       return;
     }
   }
 
-  const responseJson = await postJson(endpoint, body);
+  const responseJson = await postGenerate(endpoint, body);
   addResults(parseImageResponseOrThrow(responseJson, state.prompt, "generate"));
 }
 
@@ -838,13 +842,7 @@ async function editImages() {
 
 function buildGeneratePayload() {
   if (state.provider === "gemini") {
-    return {
-      model: state.model,
-      prompt: state.prompt,
-      n: state.n,
-      size: getGeminiSize(),
-      response_format: "b64_json",
-    };
+    return buildGeminiGeneratePayload(state.prompt);
   }
 
   const payload = {
@@ -872,12 +870,18 @@ function buildGeneratePayload() {
   return payload;
 }
 
+function getGenerationEndpointForModel(baseUrl, modelId) {
+  return classifyModelId(modelId) === "gemini"
+    ? getGeminiGenerationEndpoint(baseUrl, modelId)
+    : getGenerationEndpoint(baseUrl);
+}
+
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
-  const generationUrl = getGenerationEndpoint(baseUrl);
+  const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
   const editUrl = getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
-  const generatePayload = {
+  const generatePayload = state.provider === "gemini" ? buildGeminiGeneratePayload(prompt) : {
     ...buildGeneratePayload(),
     prompt,
   };
@@ -892,10 +896,13 @@ function updateApiGuide() {
 }
 
 function buildGenerateCurl(endpoint, payload) {
+  const authHeader = isGoogleGeminiEndpoint(endpoint)
+    ? '  -H "x-goog-api-key: $API_KEY" \\'
+    : '  -H "Authorization: Bearer $API_KEY" \\';
   return [
     'export API_KEY="你的 API Key"',
     `curl "${endpoint}" \\`,
-    '  -H "Authorization: Bearer $API_KEY" \\',
+    authHeader,
     '  -H "Content-Type: application/json" \\',
     `  -d '${JSON.stringify(payload, null, 2)}'`,
   ].join("\n");
@@ -956,7 +963,28 @@ async function postJson(endpoint, payload) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${state.apiKey}`,
+      ...(isGoogleGeminiEndpoint(endpoint)
+        ? { "x-goog-api-key": state.apiKey }
+        : { Authorization: `Bearer ${state.apiKey}` }),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw await readApiError(response);
+  }
+
+  return response.json();
+}
+
+async function postGenerate(endpoint, payload) {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(isGoogleGeminiEndpoint(endpoint)
+        ? { "x-goog-api-key": state.apiKey }
+        : { Authorization: `Bearer ${state.apiKey}` }),
     },
     body: JSON.stringify(payload),
   });
@@ -989,12 +1017,18 @@ async function requestStreamingJsonImages(endpoint, payload, mode) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${state.apiKey}`,
+      ...(isGoogleGeminiEndpoint(endpoint)
+        ? { "x-goog-api-key": state.apiKey }
+        : { Authorization: `Bearer ${state.apiKey}` }),
     },
     body: JSON.stringify(payload),
   });
 
   return readStreamingImageResponse(response, mode);
+}
+
+async function requestStreamingGenerateImages(endpoint, payload, mode) {
+  return requestStreamingJsonImages(endpoint, payload, mode);
 }
 
 async function requestStreamingFormImages(endpoint, formData, mode) {
@@ -1063,6 +1097,23 @@ function parseSseEvent(eventChunk) {
 }
 
 function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
+  const geminiItems = extractGeminiImageItems(responseJson);
+  if (geminiItems.length) {
+    return geminiItems.map((item) => ({
+      id: crypto.randomUUID(),
+      mode,
+      provider: state.provider,
+      model: state.model,
+      prompt,
+      revisedPrompt: item.revisedPrompt || "",
+      dataUrl: `data:${item.mimeType || "image/png"};base64,${item.b64}`,
+      format: inferImageFormat(item.b64, "") || mimeTypeToFormat(item.mimeType) || state.output_format,
+      size: getResolvedSize(),
+      createdAt: Date.now(),
+      fromStream,
+    }));
+  }
+
   const possibleData = [];
   if (Array.isArray(responseJson?.data)) possibleData.push(...responseJson.data);
   if (Array.isArray(responseJson?.error?.data)) possibleData.push(...responseJson.error.data);
@@ -1093,6 +1144,14 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
       };
     })
     .filter(Boolean);
+}
+
+function mimeTypeToFormat(mimeType) {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("png")) return "png";
+  if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpeg";
+  if (normalized.includes("webp")) return "webp";
+  return "";
 }
 
 function parseImageResponseOrThrow(responseJson, prompt, mode, fromStream = false) {
@@ -1223,11 +1282,6 @@ function getResolvedSize() {
     return `${width}x${height}`;
   }
   return state.size;
-}
-
-function getGeminiSize() {
-  const size = getResolvedSize();
-  return size === "auto" ? "1024x1024" : size;
 }
 
 function validateCustomSize(width, height) {
