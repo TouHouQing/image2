@@ -5,6 +5,7 @@ import {
   getGenerationEndpoint,
   normalizeBaseUrl,
   pickInitialModel,
+  pickFetchedModel,
 } from "./provider-utils.js";
 
 assert.equal(normalizeBaseUrl(""), DEFAULT_BASE_URL);
@@ -38,6 +39,14 @@ assert.equal(
 assert.equal(
   pickInitialModel(["imagen-4.0-generate-preview", "gemini-2.0-flash-preview-image-generation"]),
   "imagen-4.0-generate-preview",
+);
+assert.equal(
+  pickFetchedModel(["gpt-image-2", "gemini-2.0-flash-preview-image-generation"]),
+  "gemini-2.0-flash-preview-image-generation",
+);
+assert.equal(
+  pickFetchedModel(["gpt-image-2"]),
+  "gpt-image-2",
 );
 
 console.log("provider-utils tests passed");

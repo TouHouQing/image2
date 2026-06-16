@@ -6,6 +6,7 @@ import {
   getGenerationEndpoint,
   getProviderForModel,
   normalizeBaseUrl,
+  pickFetchedModel,
   pickInitialModel,
   supportsImageGenerationModel,
 } from "./provider-utils.js";
@@ -1155,7 +1156,7 @@ async function testEndpoint() {
       : [];
     const imageModels = models.filter(supportsImageGenerationModel);
     state.availableModels = imageModels.length ? imageModels : models;
-    state.model = pickInitialModel(state.availableModels, state.model);
+    state.model = pickFetchedModel(state.availableModels);
     applyProviderFromModel();
     syncControlsFromState();
     renderAll();

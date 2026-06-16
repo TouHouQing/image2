@@ -50,6 +50,16 @@ export function pickInitialModel(models, currentModel = "") {
   );
 }
 
+export function pickFetchedModel(models) {
+  const available = Array.isArray(models) ? models.filter(Boolean) : [];
+  return (
+    available.find((model) => classifyModelId(model) === "gemini") ||
+    available.find((model) => classifyModelId(model) === "gpt" && /image/i.test(model)) ||
+    available[0] ||
+    DEFAULT_MODEL
+  );
+}
+
 export function getProviderForModel(modelId) {
   return PROVIDERS[classifyModelId(modelId)] || PROVIDERS.gpt;
 }
