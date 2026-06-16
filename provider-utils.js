@@ -60,6 +60,18 @@ export function pickFetchedModel(models) {
   );
 }
 
+export function getModelSelectState(models, currentModel = "") {
+  const options = [...new Set((Array.isArray(models) ? models : []).filter(Boolean))];
+  const hasOptions = options.length > 0;
+  return {
+    options,
+    placeholder: hasOptions ? "请选择已获取模型" : "请先获取模型",
+    disabled: !hasOptions,
+    selectedValue: hasOptions && options.includes(currentModel) ? currentModel : "",
+    lockInput: hasOptions,
+  };
+}
+
 export function getProviderForModel(modelId) {
   return PROVIDERS[classifyModelId(modelId)] || PROVIDERS.gpt;
 }

@@ -372,6 +372,12 @@ h3 {
   background: #fffefb;
 }
 
+.field input[readonly] {
+  cursor: not-allowed;
+  background: rgba(239, 236, 228, 0.82);
+  color: var(--ink-muted);
+}
+
 .field.small {
   font-size: 0.76rem;
 }

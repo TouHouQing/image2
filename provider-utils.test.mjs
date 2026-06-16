@@ -3,6 +3,7 @@ import {
   DEFAULT_BASE_URL,
   classifyModelId,
   getGenerationEndpoint,
+  getModelSelectState,
   normalizeBaseUrl,
   pickInitialModel,
   pickFetchedModel,
@@ -47,6 +48,26 @@ assert.equal(
 assert.equal(
   pickFetchedModel(["gpt-image-2"]),
   "gpt-image-2",
+);
+assert.deepEqual(
+  getModelSelectState(["gemini-2.0-flash-preview-image-generation"], "gpt-image-2"),
+  {
+    options: ["gemini-2.0-flash-preview-image-generation"],
+    placeholder: "请选择已获取模型",
+    disabled: false,
+    selectedValue: "",
+    lockInput: true,
+  },
+);
+assert.deepEqual(
+  getModelSelectState([], "gpt-image-2"),
+  {
+    options: [],
+    placeholder: "请先获取模型",
+    disabled: true,
+    selectedValue: "",
+    lockInput: false,
+  },
 );
 
 console.log("provider-utils tests passed");

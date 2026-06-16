@@ -4,6 +4,7 @@ import {
   classifyModelId,
   getEditEndpoint,
   getGenerationEndpoint,
+  getModelSelectState,
   getProviderForModel,
   normalizeBaseUrl,
   pickFetchedModel,
@@ -528,15 +529,22 @@ function supportsEditing() {
 }
 
 function renderModelSelect() {
-  const options = [...new Set([state.model, ...state.availableModels, DEFAULT_MODEL].filter(Boolean))];
+  const selectState = getModelSelectState(state.availableModels, state.model);
   elements.modelSelect.innerHTML = "";
-  options.forEach((model) => {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = selectState.placeholder;
+  elements.modelSelect.append(placeholder);
+  selectState.options.forEach((model) => {
     const option = document.createElement("option");
     option.value = model;
     option.textContent = model;
     elements.modelSelect.append(option);
   });
-  elements.modelSelect.value = state.model;
+  elements.modelSelect.disabled = selectState.disabled;
+  elements.modelSelect.value = selectState.selectedValue;
+  elements.modelInput.readOnly = selectState.lockInput;
+  elements.modelInput.title = selectState.lockInput ? "已根据获取到的模型锁定；如需切换请使用模型下拉" : "";
 }
 
 function renderProviderSummary() {
