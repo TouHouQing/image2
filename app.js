@@ -1,14 +1,14 @@
 import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
-  buildGeminiChatPayload,
   buildGeminiGeneratePayload,
   classifyModelId,
   extractChatCompletionImageItems,
   extractGeminiImageItems,
+  extractModelIdsFromResponse,
   getEditEndpoint,
-  getGeminiModeForBaseUrl,
   getGenerationEndpointForModel,
+  getModelListEndpoints,
   getModelSelectState,
   getProviderForModel,
   isGoogleGeminiEndpoint,
@@ -564,12 +564,9 @@ function renderProviderSummary() {
   const provider = getProviderForModel(state.model);
   elements.modelProviderPill.dataset.provider = provider.id;
   elements.modelProviderText.textContent = provider.label;
-  const geminiMode = getGeminiModeForBaseUrl(state.baseUrl);
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
-      ? geminiMode === "native"
-        ? "Gemini 生图使用 Google 原生 generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
-        : "Gemini 生图使用当前接口的 /chat/completions 兼容层；编辑、流式预览和 image2 专属参数已自动收起。"
+      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
       : "Image2 模式支持生成、参考图编辑、遮罩编辑和完整 image2 参数。";
 }
 
@@ -854,9 +851,7 @@ async function editImages() {
 
 function buildGeneratePayload() {
   if (state.provider === "gemini") {
-    return getGeminiModeForBaseUrl(state.baseUrl) === "native"
-      ? buildGeminiGeneratePayload(state.prompt)
-      : buildGeminiChatPayload(state.model, state.prompt);
+    return buildGeminiGeneratePayload(state.prompt);
   }
 
   const payload = {
@@ -890,9 +885,7 @@ function updateApiGuide() {
   const editUrl = getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
   const generatePayload = state.provider === "gemini"
-    ? (getGeminiModeForBaseUrl(baseUrl) === "native"
-      ? buildGeminiGeneratePayload(prompt)
-      : buildGeminiChatPayload(state.model, prompt))
+    ? buildGeminiGeneratePayload(prompt)
     : {
     ...buildGeneratePayload(),
     prompt,
@@ -975,9 +968,7 @@ async function postGenerate(endpoint, payload) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(isGoogleGeminiEndpoint(endpoint)
-        ? { "x-goog-api-key": state.apiKey }
-        : { Authorization: `Bearer ${state.apiKey}` }),
+      ...getAuthHeaders(endpoint),
     },
     body: JSON.stringify(payload),
   });
@@ -1010,14 +1001,18 @@ async function requestStreamingJsonImages(endpoint, payload, mode) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(isGoogleGeminiEndpoint(endpoint)
-        ? { "x-goog-api-key": state.apiKey }
-        : { Authorization: `Bearer ${state.apiKey}` }),
+      ...getAuthHeaders(endpoint),
     },
     body: JSON.stringify(payload),
   });
 
   return readStreamingImageResponse(response, mode);
+}
+
+function getAuthHeaders(endpoint) {
+  return isGoogleGeminiEndpoint(endpoint)
+    ? { "x-goog-api-key": state.apiKey }
+    : { Authorization: `Bearer ${state.apiKey}` };
 }
 
 async function requestStreamingGenerateImages(endpoint, payload, mode) {
@@ -1221,16 +1216,7 @@ async function testEndpoint() {
   elements.testEndpointButton.disabled = true;
   elements.testEndpointButton.textContent = "获取中";
   try {
-    const response = await fetch(`${state.baseUrl}/models`, {
-      headers: {
-        Authorization: `Bearer ${state.apiKey}`,
-      },
-    });
-    if (!response.ok) throw await readApiError(response);
-    const json = await response.json();
-    const models = Array.isArray(json?.data)
-      ? json.data.map((item) => item.id || item.name).filter(Boolean)
-      : [];
+    const models = await fetchAvailableModels(state.baseUrl);
     const imageModels = models.filter(supportsImageGenerationModel);
     state.availableModels = imageModels.length ? imageModels : models;
     state.model = pickFetchedModel(state.availableModels);
@@ -1250,6 +1236,27 @@ async function testEndpoint() {
     elements.testEndpointButton.disabled = false;
     elements.testEndpointButton.textContent = "获取模型";
   }
+}
+
+async function fetchAvailableModels(baseUrl) {
+  const errors = [];
+  const models = [];
+
+  for (const endpoint of getModelListEndpoints(baseUrl)) {
+    try {
+      const response = await fetch(endpoint, {
+        headers: getAuthHeaders(endpoint),
+      });
+      if (!response.ok) throw await readApiError(response);
+      models.push(...extractModelIdsFromResponse(await response.json()));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (models.length) return [...new Set(models)];
+  if (errors.length) throw errors[errors.length - 1];
+  return [];
 }
 
 function formatRequestError(error) {

@@ -35,7 +35,7 @@ export function classifyModelId(modelId) {
 
 export function supportsImageGenerationModel(modelId) {
   const normalized = String(modelId || "").toLowerCase();
-  return /image|gemini|imagen/.test(normalized);
+  return /(^|[-_/])image($|[-_/])|imagen|image-generation|gpt-image/.test(normalized);
 }
 
 export function pickInitialModel(models, currentModel = "") {
@@ -89,11 +89,26 @@ export function getChatCompletionsEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/chat/completions`;
 }
 
-export function getGeminiGenerationEndpoint(baseUrl, modelId) {
-  if (!isGoogleGeminiBaseUrl(baseUrl)) return getChatCompletionsEndpoint(baseUrl);
-  const normalizedBase = normalizeBaseUrl(baseUrl)
+export function getGeminiApiBaseUrl(baseUrl) {
+  return normalizeBaseUrl(baseUrl)
     .replace(/\/openai$/i, "")
+    .replace(/\/v\d+(?:alpha|beta)?$/i, "/v1beta")
     .replace(/\/+$/, "");
+}
+
+export function getGeminiModelsEndpoint(baseUrl) {
+  return `${getGeminiApiBaseUrl(baseUrl)}/models`;
+}
+
+export function getModelListEndpoints(baseUrl) {
+  return [...new Set([
+    `${normalizeBaseUrl(baseUrl)}/models`,
+    getGeminiModelsEndpoint(baseUrl),
+  ])];
+}
+
+export function getGeminiGenerationEndpoint(baseUrl, modelId) {
+  const normalizedBase = getGeminiApiBaseUrl(baseUrl);
   const normalizedModel = String(modelId || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
   return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:generateContent`;
 }
@@ -112,7 +127,7 @@ export function isGoogleGeminiBaseUrl(baseUrl) {
 }
 
 export function getGeminiModeForBaseUrl(baseUrl) {
-  return isGoogleGeminiBaseUrl(baseUrl) ? "native" : "chat";
+  return "native";
 }
 
 export function isGoogleGeminiEndpoint(endpoint) {
@@ -129,6 +144,9 @@ export function buildGeminiGeneratePayload(prompt) {
     ],
     generationConfig: {
       responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: {
+        aspectRatio: "1:1",
+      },
     },
   };
 }
@@ -149,8 +167,21 @@ export function buildGeminiChatPayload(model, prompt) {
   return payload;
 }
 
+export function extractModelIdsFromResponse(responseJson) {
+  const openAIModels = Array.isArray(responseJson?.data)
+    ? responseJson.data.map((item) => item?.id || item?.name).filter(Boolean)
+    : [];
+  const geminiModels = Array.isArray(responseJson?.models)
+    ? responseJson.models.map((item) => item?.name || item?.id).filter(Boolean)
+    : [];
+  return [...new Set([...openAIModels, ...geminiModels])];
+}
+
 export function extractGeminiImageItems(responseJson) {
-  const candidates = Array.isArray(responseJson?.candidates) ? responseJson.candidates : [];
+  const candidates = [
+    ...(Array.isArray(responseJson?.candidates) ? responseJson.candidates : []),
+    ...(Array.isArray(responseJson?.response?.candidates) ? responseJson.response.candidates : []),
+  ];
   const items = [];
 
   candidates.forEach((candidate) => {

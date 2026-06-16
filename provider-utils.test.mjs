@@ -6,10 +6,13 @@ import {
   classifyModelId,
   extractChatCompletionImageItems,
   extractGeminiImageItems,
+  extractModelIdsFromResponse,
   getChatCompletionsEndpoint,
+  getGeminiModelsEndpoint,
   getGeminiGenerationEndpoint,
   getGenerationEndpointForModel,
   getGenerationEndpoint,
+  getModelListEndpoints,
   getModelSelectState,
   getGeminiModeForBaseUrl,
   isGoogleGeminiBaseUrl,
@@ -17,6 +20,7 @@ import {
   normalizeBaseUrl,
   pickInitialModel,
   pickFetchedModel,
+  supportsImageGenerationModel,
 } from "./provider-utils.js";
 
 assert.equal(normalizeBaseUrl(""), DEFAULT_BASE_URL);
@@ -47,11 +51,11 @@ assert.equal(
 );
 assert.equal(
   getGeminiGenerationEndpoint("https://sub.tohoqing.com/v1", "models/gemini-2.5-flash-image"),
-  "https://sub.tohoqing.com/v1/chat/completions",
+  "https://sub.tohoqing.com/v1beta/models/gemini-2.5-flash-image:generateContent",
 );
 assert.equal(
   getGenerationEndpointForModel("https://sub.tohoqing.com/v1", "gemini-3.1-flash-image"),
-  "https://sub.tohoqing.com/v1/chat/completions",
+  "https://sub.tohoqing.com/v1beta/models/gemini-3.1-flash-image:generateContent",
 );
 assert.equal(
   getGenerationEndpointForModel(
@@ -60,8 +64,26 @@ assert.equal(
   ),
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
 );
-assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "chat");
+assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "native");
 assert.equal(getGeminiModeForBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), "native");
+assert.equal(
+  getGeminiModelsEndpoint("https://sub.tohoqing.com/v1"),
+  "https://sub.tohoqing.com/v1beta/models",
+);
+assert.deepEqual(getModelListEndpoints("https://sub.tohoqing.com/v1"), [
+  "https://sub.tohoqing.com/v1/models",
+  "https://sub.tohoqing.com/v1beta/models",
+]);
+assert.deepEqual(getModelListEndpoints("https://generativelanguage.googleapis.com/v1beta/openai"), [
+  "https://generativelanguage.googleapis.com/v1beta/openai/models",
+  "https://generativelanguage.googleapis.com/v1beta/models",
+]);
+assert.deepEqual(extractModelIdsFromResponse({
+  data: [{ id: "gpt-image-2" }, { name: "gemini-3.1-flash-image" }],
+}), ["gpt-image-2", "gemini-3.1-flash-image"]);
+assert.deepEqual(extractModelIdsFromResponse({
+  models: [{ name: "models/gemini-3.1-flash-image" }],
+}), ["models/gemini-3.1-flash-image"]);
 assert.equal(
   isGoogleGeminiEndpoint("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-image:generateContent"),
   true,
@@ -77,6 +99,9 @@ assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
   ],
   generationConfig: {
     responseModalities: ["TEXT", "IMAGE"],
+    imageConfig: {
+      aspectRatio: "1:1",
+    },
   },
 });
 assert.deepEqual(buildGeminiChatPayload("gemini-3.1-flash-image", "画一只猫"), {
@@ -107,6 +132,25 @@ assert.deepEqual(
   [
     { b64: "iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "ok" },
     { b64: "/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
+  ],
+);
+assert.deepEqual(
+  extractGeminiImageItems({
+    response: {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { text: "wrapped" },
+              { inlineData: { mimeType: "image/png", data: "iVBORw0KGgoBBB" } },
+            ],
+          },
+        },
+      ],
+    },
+  }),
+  [
+    { b64: "iVBORw0KGgoBBB", mimeType: "image/png", revisedPrompt: "wrapped" },
   ],
 );
 assert.deepEqual(
@@ -157,6 +201,10 @@ assert.deepEqual(
 assert.equal(classifyModelId("gpt-image-2"), "gpt");
 assert.equal(classifyModelId("gemini-2.0-flash-preview-image-generation"), "gemini");
 assert.equal(classifyModelId("imagen-4.0-generate-preview"), "gemini");
+assert.equal(supportsImageGenerationModel("gemini-2.5-flash"), false);
+assert.equal(supportsImageGenerationModel("gemini-3.1-flash-image"), true);
+assert.equal(supportsImageGenerationModel("gpt-5.2"), false);
+assert.equal(supportsImageGenerationModel("gpt-image-2"), true);
 
 assert.equal(
   pickInitialModel(["gemini-2.0-flash-preview-image-generation", "gpt-image-2"]),

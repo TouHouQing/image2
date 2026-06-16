@@ -25,18 +25,17 @@
 
 页面默认接口为 `https://sub.tohoqing.com/v1`，Image2 和 Gemini 都默认从这个接口获取模型。也可以手动改成任意 OpenAI 兼容接口；用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
 
-Gemini 模型默认也走 `https://sub.tohoqing.com/v1` 的 OpenAI 兼容对话接口：页面会调用 `POST /chat/completions`，而不是拼接 `POST /models/{model}:generateContent`，也不会走会返回 `Images API is not supported for this platform` 的 Images API。只有当接口地址是 Google Gemini 原生域名（例如 `https://generativelanguage.googleapis.com/v1beta/openai`）时，页面才会自动切到 Google 原生 `models/{model}:generateContent` 调用。
+Gemini 模型在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路由：页面会把默认 `https://sub.tohoqing.com/v1` 自动派生成 `https://sub.tohoqing.com/v1beta/models/{model}:generateContent`。不会走 `/images/generations`，也不会走容易空返回的 `/chat/completions` 图片兼容写法。
 
 ## API 调用教学
 
 右侧“直连接口”区域会根据当前页面的接口地址、模型、提示词和参数自动生成可复制的 cURL 示例：
 
 - Image2：`POST /images/generations`，用 JSON 请求生成图片。
-- Gemini（默认 `sub.tohoqing.com`）：`POST /chat/completions`，使用 OpenAI 兼容消息格式和 `modalities` 请求生成图片。
-- Gemini（Google 原生域名）：`POST /models/{model}:generateContent`，使用 Gemini 原生 `contents` / `generationConfig.responseModalities` 请求生成图片。
+- Gemini：`POST /v1beta/models/{model}:generateContent`，使用 Gemini 原生 `contents` / `generationConfig.responseModalities` 请求生成图片。
 - `POST /images/edits`：用 multipart form-data 上传参考图并编辑图片。
 
-Gemini 模式下，页面会根据接口域名选择兼容对话 payload 或原生 payload，并同时解析 `message.images` 和 Gemini `inlineData` 图片；编辑调用会提示切回 Image2 模型。
+Gemini 模式下，页面会解析 Gemini `inlineData` 图片；编辑调用会提示切回 Image2 模型。
 
 示例中的 API Key 使用 `$API_KEY` 占位，不会把页面里输入的真实 Key 显示在代码块里。
 
