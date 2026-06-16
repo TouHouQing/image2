@@ -15,6 +15,10 @@ import {
   getModelListEndpoints,
   getModelSelectState,
   getGeminiModeForBaseUrl,
+  getImage2QualitySizeTier,
+  normalizeImageOutputFormat,
+  resolveImage2RequestSize,
+  shouldTranscodeImageResult,
   isGoogleGeminiBaseUrl,
   isGoogleGeminiEndpoint,
   normalizeBaseUrl,
@@ -205,6 +209,27 @@ assert.equal(supportsImageGenerationModel("gemini-2.5-flash"), false);
 assert.equal(supportsImageGenerationModel("gemini-3.1-flash-image"), true);
 assert.equal(supportsImageGenerationModel("gpt-5.2"), false);
 assert.equal(supportsImageGenerationModel("gpt-image-2"), true);
+assert.equal(getImage2QualitySizeTier("low"), "1K");
+assert.equal(getImage2QualitySizeTier("medium"), "2K");
+assert.equal(getImage2QualitySizeTier("high"), "4K");
+assert.equal(getImage2QualitySizeTier("auto"), "");
+assert.equal(resolveImage2RequestSize("low", "2048x2048"), "1024x1024");
+assert.equal(resolveImage2RequestSize("medium", "2048x2048"), "2048x2048");
+assert.equal(resolveImage2RequestSize("high", "2048x2048"), "2880x2880");
+assert.equal(resolveImage2RequestSize("high", "2048x1152"), "3840x2160");
+assert.equal(resolveImage2RequestSize("low", "2048x1152"), "1024x640");
+assert.equal(resolveImage2RequestSize("high", "3840x512"), "3840x1280");
+assert.equal(resolveImage2RequestSize("auto", "2048x2048"), "2048x2048");
+assert.equal(resolveImage2RequestSize("auto", "auto"), "auto");
+assert.equal(normalizeImageOutputFormat("jpg"), "jpeg");
+assert.equal(normalizeImageOutputFormat("image/png"), "png");
+assert.equal(normalizeImageOutputFormat("webp"), "webp");
+assert.equal(normalizeImageOutputFormat("gif"), "");
+assert.equal(shouldTranscodeImageResult("gpt", "png", "jpeg"), true);
+assert.equal(shouldTranscodeImageResult("gpt", "jpeg", "jpg"), false);
+assert.equal(shouldTranscodeImageResult("gpt", "png", "png"), false);
+assert.equal(shouldTranscodeImageResult("gemini", "png", "jpeg"), false);
+assert.equal(shouldTranscodeImageResult("gpt", "gif", "jpeg"), false);
 
 assert.equal(
   pickInitialModel(["gemini-2.0-flash-preview-image-generation", "gpt-image-2"]),

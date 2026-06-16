@@ -13,6 +13,8 @@
 
 默认会把 API Key、接口地址、提示词和参数缓存到当前浏览器的 `localStorage`，方便下次继续使用。取消“缓存到此浏览器”会清掉本地缓存。
 
+Image2 的质量档位会同步决定实际请求尺寸：`Low -> 1K`、`Medium -> 2K`、`High -> 4K`。页面会尽量按当前尺寸比例换算成满足接口约束的有效像素尺寸再发送给 sub2api，例如 `High + 2048x1152` 会请求 `3840x2160`，`High + 2048x2048` 会请求约 `2880x2880`；只有 `Auto` 会保持当前尺寸原样发送。
+
 ## 推荐入口
 
 页面顶部和右侧栏放了低打扰的推荐入口，不遮挡生图流程：
@@ -36,6 +38,7 @@ Gemini 模型在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路
 - `POST /images/edits`：用 multipart form-data 上传参考图并编辑图片。
 
 Gemini 模式下，页面会解析 Gemini `inlineData` 图片；编辑调用会提示切回 Image2 模型。
+Image2 模式下，示例 cURL 会展示最终发送给接口的 `size`；显式选择 `Low`、`Medium`、`High` 时分别对应 sub2api 的 `1K`、`2K`、`4K` 档位。
 
 示例中的 API Key 使用 `$API_KEY` 占位，不会把页面里输入的真实 Key 显示在代码块里。
 

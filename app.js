@@ -8,13 +8,17 @@ import {
   extractModelIdsFromResponse,
   getEditEndpoint,
   getGenerationEndpointForModel,
+  getImage2QualitySizeTier,
   getModelListEndpoints,
   getModelSelectState,
   getProviderForModel,
   isGoogleGeminiEndpoint,
+  normalizeImageOutputFormat,
   normalizeBaseUrl,
   pickFetchedModel,
   pickInitialModel,
+  resolveImage2RequestSize,
+  shouldTranscodeImageResult,
   supportsImageGenerationModel,
 } from "./provider-utils.js";
 
@@ -508,8 +512,8 @@ function syncControlsFromState() {
   state.baseUrl = elements.baseUrlInput.value;
   elements.brushSizeInput.value = String(state.brushSize);
 
-  document.querySelector("#qualityOutput").textContent = state.quality;
-  document.querySelector("#sizeOutput").textContent = getResolvedSize();
+  document.querySelector("#qualityOutput").textContent = getQualityOutputText();
+  document.querySelector("#sizeOutput").textContent = getDisplayRequestSize();
   document.querySelector("#formatOutput").textContent = state.output_format;
   document.querySelector("#backgroundOutput").textContent = state.background;
   document.querySelector("#moderationOutput").textContent = state.moderation;
@@ -567,7 +571,7 @@ function renderProviderSummary() {
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
       ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
-      : "Image2 模式支持生成、参考图编辑、遮罩编辑和完整 image2 参数。";
+      : "Image2 模式会把 Low / Medium / High 映射为 1K / 2K / 4K 请求尺寸；Auto 则按当前尺寸发送。";
 }
 
 function renderParameterButtons() {
@@ -806,7 +810,7 @@ async function generateImages() {
   }
 
   const responseJson = await postGenerate(endpoint, body);
-  addResults(parseImageResponseOrThrow(responseJson, state.prompt, "generate"));
+  await addResults(parseImageResponseOrThrow(responseJson, state.prompt, "generate"));
 }
 
 async function editImages() {
@@ -814,7 +818,7 @@ async function editImages() {
   formData.append("model", state.model);
   formData.append("prompt", state.prompt);
   appendOptionalFormData(formData, "n", state.n);
-  appendOptionalFormData(formData, "size", getResolvedSize());
+  appendOptionalFormData(formData, "size", getImage2RequestSize());
   appendOptionalFormData(formData, "quality", state.quality);
   appendOptionalFormData(formData, "output_format", state.output_format);
   appendOptionalFormData(formData, "background", state.background);
@@ -846,7 +850,7 @@ async function editImages() {
   }
 
   const responseJson = await postForm(endpoint, formData);
-  addResults(parseImageResponseOrThrow(responseJson, state.prompt, "edit"));
+  await addResults(parseImageResponseOrThrow(responseJson, state.prompt, "edit"));
 }
 
 function buildGeneratePayload() {
@@ -858,7 +862,7 @@ function buildGeneratePayload() {
     model: state.model,
     prompt: state.prompt,
     n: state.n,
-    size: getResolvedSize(),
+    size: getImage2RequestSize(),
     quality: state.quality,
     output_format: state.output_format,
     background: state.background,
@@ -921,7 +925,7 @@ function buildEditCurl(endpoint, prompt) {
     `  -F model="${state.model}" \\`,
     `  -F prompt="${escapeCurlFormValue(prompt)}" \\`,
     '  -F image="@/path/to/reference.png" \\',
-    `  -F size="${getResolvedSize()}" \\`,
+    `  -F size="${getImage2RequestSize()}" \\`,
     `  -F quality="${state.quality}" \\`,
     `  -F output_format="${state.output_format}" \\`,
     `  -F background="${state.background}" \\`,
@@ -1039,7 +1043,7 @@ async function readStreamingImageResponse(response, mode) {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     const items = parseImageResponseOrThrow(await response.json(), state.prompt, mode);
-    addResults(items);
+    await addResults(items);
     return items;
   }
 
@@ -1059,8 +1063,8 @@ async function readStreamingImageResponse(response, mode) {
       if (!parsed) continue;
       const items = parseImageResponse(parsed, state.prompt, mode, true);
       if (items.length) {
-        addResults(items);
-        completed.push(...items);
+        const normalizedItems = await addResults(items);
+        completed.push(...normalizedItems);
       }
     }
   }
@@ -1096,7 +1100,7 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
       revisedPrompt: item.revisedPrompt || "",
       dataUrl: item.dataUrl,
       format: inferImageFormat("", item.dataUrl) || mimeTypeToFormat(item.mimeType) || state.output_format,
-      size: getResolvedSize(),
+      size: getDisplayRequestSize(),
       createdAt: Date.now(),
       fromStream,
     }));
@@ -1113,7 +1117,7 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
       revisedPrompt: item.revisedPrompt || "",
       dataUrl: `data:${item.mimeType || "image/png"};base64,${item.b64}`,
       format: inferImageFormat(item.b64, "") || mimeTypeToFormat(item.mimeType) || state.output_format,
-      size: getResolvedSize(),
+      size: getDisplayRequestSize(),
       createdAt: Date.now(),
       fromStream,
     }));
@@ -1143,7 +1147,7 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
         revisedPrompt: item.revised_prompt || responseJson.revised_prompt || "",
         dataUrl: b64 ? `data:image/${inferredFormat};base64,${b64}` : url,
         format: inferredFormat,
-        size: getResolvedSize(),
+        size: getDisplayRequestSize(),
         createdAt: Date.now(),
         fromStream,
       };
@@ -1173,20 +1177,53 @@ function inferImageFormat(b64, url) {
   if (b64?.startsWith("/9j/")) return "jpeg";
   if (b64?.startsWith("UklGR")) return "webp";
 
-  const match = String(url || "").match(/\.(png|jpe?g|webp)(?:[?#]|$)/i);
+  const normalizedUrl = String(url || "");
+  const dataUrlMatch = normalizedUrl.match(/^data:image\/(png|jpe?g|webp)[;,]/i);
+  if (dataUrlMatch) return dataUrlMatch[1].toLowerCase().replace("jpg", "jpeg");
+
+  const match = normalizedUrl.match(/\.(png|jpe?g|webp)(?:[?#]|$)/i);
   if (!match) return "";
   return match[1].toLowerCase().replace("jpg", "jpeg");
 }
 
-function addResults(results) {
+async function addResults(results) {
   if (!results.length) {
     throw new Error("API 没有返回图片数据。");
   }
 
-  state.results = [...results, ...state.results];
-  state.selectedResultId = results[0].id;
+  const normalizedResults = await normalizeResultOutputFormats(results);
+  state.results = [...normalizedResults, ...state.results];
+  state.selectedResultId = normalizedResults[0].id;
   renderResults();
   renderHistory();
+  return normalizedResults;
+}
+
+async function normalizeResultOutputFormats(results) {
+  if (state.provider !== "gpt") return results;
+
+  const requestedFormat = normalizeImageOutputFormat(state.output_format);
+  if (!requestedFormat) return results;
+
+  return Promise.all(results.map((result) => normalizeResultOutputFormat(result, requestedFormat)));
+}
+
+async function normalizeResultOutputFormat(result, requestedFormat) {
+  const actualFormat = normalizeImageOutputFormat(result.format);
+  if (!shouldTranscodeImageResult(result.provider, requestedFormat, actualFormat)) {
+    return result;
+  }
+
+  try {
+    const dataUrl = await transcodeImageDataUrl(result.dataUrl, requestedFormat);
+    return {
+      ...result,
+      dataUrl,
+      format: requestedFormat,
+    };
+  } catch {
+    return result;
+  }
 }
 
 async function readApiError(response) {
@@ -1299,6 +1336,20 @@ function getResolvedSize() {
     return `${width}x${height}`;
   }
   return state.size;
+}
+
+function getImage2RequestSize() {
+  return resolveImage2RequestSize(state.quality, getResolvedSize());
+}
+
+function getDisplayRequestSize() {
+  if (state.provider !== "gpt") return getResolvedSize();
+  return getImage2RequestSize();
+}
+
+function getQualityOutputText() {
+  const tier = state.provider === "gpt" ? getImage2QualitySizeTier(state.quality) : "";
+  return tier ? `${state.quality} -> ${tier}` : state.quality;
 }
 
 function validateCustomSize(width, height) {
@@ -1564,8 +1615,26 @@ function loadImage(src) {
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = reject;
+    if (/^https?:\/\//i.test(src)) {
+      image.crossOrigin = "anonymous";
+    }
     image.src = src;
   });
+}
+
+async function transcodeImageDataUrl(dataUrl, format) {
+  const normalizedFormat = normalizeImageOutputFormat(format);
+  if (!normalizedFormat) return dataUrl;
+
+  const image = await loadImage(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0);
+
+  const mimeType = normalizedFormat === "jpeg" ? "image/jpeg" : `image/${normalizedFormat}`;
+  return canvas.toDataURL(mimeType, 0.92);
 }
 
 function formatBytes(bytes) {

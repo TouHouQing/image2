@@ -513,6 +513,8 @@ h3 {
   color: var(--ink-soft);
   font-size: 0.78rem;
   font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .tool-button:hover,

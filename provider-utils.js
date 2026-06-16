@@ -38,6 +38,50 @@ export function supportsImageGenerationModel(modelId) {
   return /(^|[-_/])image($|[-_/])|imagen|image-generation|gpt-image/.test(normalized);
 }
 
+export function normalizeImageOutputFormat(format) {
+  const normalized = String(format || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^image\//, "")
+    .replace("jpg", "jpeg");
+  return ["png", "jpeg", "webp"].includes(normalized) ? normalized : "";
+}
+
+export function shouldTranscodeImageResult(providerId, requestedFormat, actualFormat) {
+  const requested = normalizeImageOutputFormat(requestedFormat);
+  const actual = normalizeImageOutputFormat(actualFormat);
+  return providerId === "gpt" && Boolean(requested) && Boolean(actual) && requested !== actual;
+}
+
+export function getImage2QualitySizeTier(quality) {
+  switch (String(quality || "").trim().toLowerCase()) {
+    case "low":
+      return "1K";
+    case "medium":
+      return "2K";
+    case "high":
+      return "4K";
+    default:
+      return "";
+  }
+}
+
+export function resolveImage2RequestSize(quality, resolvedSize) {
+  const tier = getImage2QualitySizeTier(quality);
+  if (!tier) return resolvedSize;
+
+  const dimensions = parseImageDimensions(resolvedSize);
+  if (!dimensions) {
+    return {
+      "1K": "1024x1024",
+      "2K": "2048x2048",
+      "4K": "2880x2880",
+    }[tier];
+  }
+
+  return dimensionsForImage2Tier(dimensions.width, dimensions.height, tier);
+}
+
 export function pickInitialModel(models, currentModel = "") {
   const available = Array.isArray(models) ? models.filter(Boolean) : [];
   if (currentModel && available.includes(currentModel)) return currentModel;
@@ -175,6 +219,83 @@ export function extractModelIdsFromResponse(responseJson) {
     ? responseJson.models.map((item) => item?.name || item?.id).filter(Boolean)
     : [];
   return [...new Set([...openAIModels, ...geminiModels])];
+}
+
+function parseImageDimensions(size) {
+  const match = String(size || "").trim().match(/^(\d+)x(\d+)$/i);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return { width, height };
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function dimensionsForImage2Tier(width, height, tier) {
+  const maxEdgeByTier = {
+    "1K": 1024,
+    "2K": 2048,
+    "4K": 3840,
+  };
+  const maxPixelsByTier = {
+    "1K": 1024 * 1024,
+    "2K": 2048 * 2048,
+    "4K": 3840 * 2160,
+  };
+  const minPixels = 655360;
+  const maxEdge = maxEdgeByTier[tier] || 2048;
+  const maxPixels = maxPixelsByTier[tier] || maxPixelsByTier["2K"];
+  const ratio = clamp(width / height, 1 / 3, 3);
+  let outputWidth;
+  let outputHeight;
+
+  if (ratio >= 1) {
+    outputWidth = maxEdge;
+    outputHeight = maxEdge / ratio;
+  } else {
+    outputHeight = maxEdge;
+    outputWidth = maxEdge * ratio;
+  }
+
+  if (outputWidth * outputHeight > maxPixels) {
+    const scale = Math.sqrt(maxPixels / (outputWidth * outputHeight));
+    outputWidth *= scale;
+    outputHeight *= scale;
+  }
+
+  outputWidth = roundImageDimension(outputWidth);
+  outputHeight = roundImageDimension(outputHeight);
+
+  if (outputWidth * outputHeight > maxPixels) {
+    const scale = Math.sqrt(maxPixels / (outputWidth * outputHeight));
+    outputWidth = floorImageDimension(outputWidth * scale);
+    outputHeight = floorImageDimension(outputHeight * scale);
+  }
+
+  if (outputWidth * outputHeight < minPixels) {
+    if (outputWidth >= outputHeight) {
+      outputHeight = ceilImageDimension(minPixels / outputWidth);
+    } else {
+      outputWidth = ceilImageDimension(minPixels / outputHeight);
+    }
+  }
+
+  return `${outputWidth}x${outputHeight}`;
+}
+
+function roundImageDimension(value) {
+  return Math.max(256, Math.round(value / 16) * 16);
+}
+
+function floorImageDimension(value) {
+  return Math.max(256, Math.floor(value / 16) * 16);
+}
+
+function ceilImageDimension(value) {
+  return Math.max(256, Math.ceil(value / 16) * 16);
 }
 
 export function extractGeminiImageItems(responseJson) {
