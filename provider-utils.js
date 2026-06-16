@@ -142,7 +142,7 @@ export function buildGeminiChatPayload(model, prompt) {
         content: prompt,
       },
     ],
-    modalities: ["text", "image"],
+    modalities: ["image", "text"],
     stream: false,
   };
 
@@ -181,11 +181,13 @@ export function extractChatCompletionImageItems(responseJson) {
 
   choices.forEach((choice) => {
     const message = choice?.message || choice?.delta || {};
-    const revisedPrompt = typeof message.content === "string" ? message.content : "";
+    const revisedPrompt = getRevisedPromptFromChatContent(message.content);
     const images = [
+      ...(message.image ? [message.image] : []),
       ...(Array.isArray(message.images) ? message.images : []),
       ...(Array.isArray(message.content_parts) ? message.content_parts : []),
       ...(Array.isArray(message.content) ? message.content : []),
+      ...(getImageLikeContentParts(message.content)),
     ];
 
     images.forEach((image) => {
@@ -226,4 +228,29 @@ export function extractChatCompletionImageItems(responseJson) {
 function getMimeTypeFromDataUrl(dataUrl) {
   const match = String(dataUrl || "").match(/^data:([^;,]+)[;,]/i);
   return match?.[1] || "";
+}
+
+function getRevisedPromptFromChatContent(content) {
+  if (typeof content !== "string") return "";
+  return isImageString(content) ? "" : content;
+}
+
+function getImageLikeContentParts(content) {
+  if (typeof content !== "string" || !isImageString(content)) return [];
+  return [{ data_url: normalizeImageString(content) }];
+}
+
+function isImageString(value) {
+  const normalized = String(value || "").trim();
+  return /^data:image\//i.test(normalized) || isBareImageBase64(normalized);
+}
+
+function normalizeImageString(value) {
+  const normalized = String(value || "").trim();
+  if (/^data:image\//i.test(normalized)) return normalized;
+  return `data:image/png;base64,${normalized}`;
+}
+
+function isBareImageBase64(value) {
+  return /^(iVBORw0KGgo|\/9j\/|UklGR)/.test(value);
 }

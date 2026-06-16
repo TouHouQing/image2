@@ -87,7 +87,7 @@ assert.deepEqual(buildGeminiChatPayload("gemini-3.1-flash-image", "画一只猫"
       content: "画一只猫",
     },
   ],
-  modalities: ["text", "image"],
+  modalities: ["image", "text"],
   stream: false,
 });
 assert.deepEqual(
@@ -126,6 +126,32 @@ assert.deepEqual(
   [
     { dataUrl: "data:image/png;base64,iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "ok" },
     { dataUrl: "data:image/jpeg;base64,/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "ok" },
+  ],
+);
+assert.deepEqual(
+  extractChatCompletionImageItems({
+    choices: [
+      {
+        message: {
+          image: { image_url: { url: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4" } },
+        },
+      },
+      {
+        message: {
+          content: "data:image/png;base64,iVBORw0KGgoAAA",
+        },
+      },
+      {
+        message: {
+          content: "/9j/4AAQ",
+        },
+      },
+    ],
+  }),
+  [
+    { dataUrl: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4", mimeType: "image/webp", revisedPrompt: "" },
+    { dataUrl: "data:image/png;base64,iVBORw0KGgoAAA", mimeType: "image/png", revisedPrompt: "" },
+    { dataUrl: "data:image/png;base64,/9j/4AAQ", mimeType: "image/png", revisedPrompt: "" },
   ],
 );
 assert.equal(classifyModelId("gpt-image-2"), "gpt");
