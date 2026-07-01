@@ -881,7 +881,7 @@ async function editGeminiImages() {
   }
   if (!items.length) {
     if (lastError) throw lastError;
-    throw new Error("Gemini 编辑返回了空图片结果；上游 v1beta 流式生图接口偶尔会空返回，请重试或调整提示词。");
+    throw new Error("Gemini 编辑没有返回图片；上游 v1beta 流式生图接口会偶发空返回，请重试或调整参考图/提示词。");
   }
 }
 

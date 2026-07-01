@@ -134,13 +134,13 @@ assert.deepEqual(
     contents: [
       {
         parts: [
-          { text: "加一颗红星" },
+          { text: "请基于参考图进行编辑，只修改用户指定的部分，尽量保持其余内容、风格、光线和构图完全不变，只返回编辑后的图片，不要输出解释。用户要求：加一颗红星" },
           { inline_data: { mime_type: "image/png", data: "iVBORw0KGgoAAA" } },
         ],
       },
     ],
     generationConfig: {
-      responseModalities: ["TEXT", "IMAGE"],
+      responseModalities: ["IMAGE"],
     },
   },
 );

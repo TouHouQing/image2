@@ -223,11 +223,14 @@ export function buildGeminiChatPayload(model, prompt) {
 }
 
 export function buildGeminiEditPayload(prompt, imageParts) {
+  const normalizedPrompt = String(prompt || "").trim();
   return {
     contents: [
       {
         parts: [
-          { text: prompt },
+          {
+            text: `请基于参考图进行编辑，只修改用户指定的部分，尽量保持其余内容、风格、光线和构图完全不变，只返回编辑后的图片，不要输出解释。用户要求：${normalizedPrompt}`,
+          },
           ...(Array.isArray(imageParts) ? imageParts : []).filter(Boolean).map((image) => ({
             inline_data: {
               mime_type: image.mimeType || "image/png",
@@ -238,7 +241,7 @@ export function buildGeminiEditPayload(prompt, imageParts) {
       },
     ],
     generationConfig: {
-      responseModalities: ["TEXT", "IMAGE"],
+      responseModalities: ["IMAGE"],
     },
   };
 }
