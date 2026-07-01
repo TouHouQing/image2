@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_BASE_URL,
   buildGeminiChatPayload,
-  buildGeminiResponsesEditPayload,
+  buildGeminiEditPayload,
   buildGeminiGeneratePayload,
   classifyModelId,
   extractChatCompletionImageItems,
@@ -10,6 +10,7 @@ import {
   extractModelIdsFromResponse,
   getChatCompletionsEndpoint,
   getGeminiModelsEndpoint,
+  getGeminiStreamGenerationEndpoint,
   getGeminiGenerationEndpoint,
   getGenerationEndpointForModel,
   getGenerationEndpoint,
@@ -17,7 +18,6 @@ import {
   getModelSelectState,
   getGeminiModeForBaseUrl,
   getImage2QualitySizeTier,
-  getResponsesEndpoint,
   isPartialImageStreamPayload,
   normalizeImageOutputFormat,
   resolveImage2RequestSize,
@@ -50,8 +50,8 @@ assert.equal(
   "https://sub.tohoqing.com/v1/chat/completions",
 );
 assert.equal(
-  getResponsesEndpoint("sub.tohoqing.com"),
-  "https://sub.tohoqing.com/v1/responses",
+  getGeminiStreamGenerationEndpoint("sub.tohoqing.com", "gemini-3.1-flash-image"),
+  "https://sub.tohoqing.com/v1beta/models/gemini-3.1-flash-image:streamGenerateContent?alt=sse",
 );
 assert.equal(
   getGeminiGenerationEndpoint(
@@ -127,27 +127,21 @@ assert.deepEqual(buildGeminiChatPayload("gemini-3.1-flash-image", "画一只猫"
   stream: false,
 });
 assert.deepEqual(
-  buildGeminiResponsesEditPayload("gemini-3.1-flash-image", "加一颗红星", [
-    "data:image/png;base64,iVBORw0KGgoAAA",
+  buildGeminiEditPayload("加一颗红星", [
+    { mimeType: "image/png", data: "iVBORw0KGgoAAA" },
   ]),
   {
-    model: "gemini-3.1-flash-image",
-    input: [
+    contents: [
       {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: "加一颗红星 Respond with exactly one Markdown image using an inline data URL, no prose.",
-          },
-          {
-            type: "input_image",
-            image_url: "data:image/png;base64,iVBORw0KGgoAAA",
-          },
+        parts: [
+          { text: "加一颗红星" },
+          { inline_data: { mime_type: "image/png", data: "iVBORw0KGgoAAA" } },
         ],
       },
     ],
-    stream: false,
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
   },
 );
 assert.deepEqual(

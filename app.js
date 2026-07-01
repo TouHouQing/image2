@@ -1,16 +1,16 @@
 import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  buildGeminiEditPayload,
   buildGeminiGeneratePayload,
-  buildGeminiResponsesEditPayload,
   classifyModelId,
   extractChatCompletionImageItems,
   extractGeminiImageItems,
   extractModelIdsFromResponse,
   getEditEndpoint,
   getGenerationEndpointForModel,
+  getGeminiStreamGenerationEndpoint,
   getImage2QualitySizeTier,
-  getResponsesEndpoint,
   isPartialImageStreamPayload,
   getModelListEndpoints,
   getModelSelectState,
@@ -523,7 +523,7 @@ function syncControlsFromState() {
   document.querySelector("#streamOutput").textContent = state.stream ? "on" : "off";
   document.querySelector("#partialImagesOutput").textContent = String(state.partial_images);
   document.querySelector("#fidelityOutput").textContent = state.provider === "gemini"
-    ? "Responses 兼容编辑"
+    ? "v1beta 流式编辑"
     : `${state.model} 高保真`;
   renderProviderSummary();
   updateApiGuide();
@@ -574,7 +574,7 @@ function renderProviderSummary() {
   elements.modelProviderText.textContent = provider.label;
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
-      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑使用 /v1/responses 兼容路径，并会自动重试空结果。"
+      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑使用同一 /v1beta/models 的 streamGenerateContent 按次接口。"
       : "Image2 模式会把 Low / Medium / High 映射为 1K / 2K / 4K 请求尺寸；Auto 则按当前尺寸发送。";
 }
 
@@ -863,15 +863,14 @@ async function editImages() {
 }
 
 async function editGeminiImages() {
-  const imageDataUrls = await Promise.all(state.references.map((reference) => fileToDataUrl(reference.file)));
-  const endpoint = getResponsesEndpoint(state.baseUrl);
-  const payload = buildGeminiResponsesEditPayload(state.model, state.prompt, imageDataUrls);
+  const imageParts = await Promise.all(state.references.map((reference) => fileToGeminiInlineImage(reference.file)));
+  const endpoint = getGeminiStreamGenerationEndpoint(state.baseUrl, state.model);
+  const payload = buildGeminiEditPayload(state.prompt, imageParts);
   let items = [];
   let lastError = null;
   for (let attempt = 0; attempt < 3 && !items.length; attempt += 1) {
     try {
-      const responseJson = await postGenerate(endpoint, payload);
-      items = parseImageResponse(responseJson, state.prompt, "edit");
+      items = await requestStreamingGenerateImages(endpoint, payload, "edit");
       lastError = null;
     } catch (error) {
       lastError = error;
@@ -882,9 +881,8 @@ async function editGeminiImages() {
   }
   if (!items.length) {
     if (lastError) throw lastError;
-    throw new Error("Gemini 编辑返回了空图片结果；上游 Responses 兼容路径偶尔会空返回，请重试或调整提示词。");
+    throw new Error("Gemini 编辑返回了空图片结果；上游 v1beta 流式生图接口偶尔会空返回，请重试或调整提示词。");
   }
-  await addResults(items);
 }
 
 function isRetryableGeminiEditError(error) {
@@ -925,7 +923,7 @@ function buildGeneratePayload() {
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
   const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
-  const editUrl = state.provider === "gemini" ? getResponsesEndpoint(baseUrl) : getEditEndpoint(baseUrl);
+  const editUrl = state.provider === "gemini" ? getGeminiStreamGenerationEndpoint(baseUrl, state.model) : getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
   const generatePayload = state.provider === "gemini"
     ? buildGeminiGeneratePayload(prompt)
@@ -980,14 +978,22 @@ function buildEditCurl(endpoint, prompt) {
 }
 
 function buildGeminiEditCurl(endpoint, prompt) {
-  const payload = buildGeminiResponsesEditPayload(state.model, prompt, ["data:image/png;base64,$REFERENCE_IMAGE_BASE64"]);
+  const payload = buildGeminiEditPayload(prompt, [
+    { mimeType: "image/png", data: "$REFERENCE_IMAGE_BASE64" },
+  ]);
+  const authHeader = isGoogleGeminiEndpoint(endpoint)
+    ? '  -H "x-goog-api-key: $API_KEY" \\'
+    : '  -H "Authorization: Bearer $API_KEY" \\';
+  const body = JSON.stringify(payload, null, 2);
   return [
     'export API_KEY="你的 API Key"',
-    'export REFERENCE_IMAGE_BASE64="$(base64 -i /path/to/reference.png)"',
-    `curl "${endpoint}" \\`,
-    '  -H "Authorization: Bearer $API_KEY" \\',
+    'export REFERENCE_IMAGE_BASE64="$(base64 -i /path/to/reference.png | tr -d \'\\n\')"',
+    `cat <<JSON | curl "${endpoint}" \\`,
+    authHeader,
     '  -H "Content-Type: application/json" \\',
-    `  -d '${JSON.stringify(payload, null, 2)}'`,
+    '  --data-binary @-',
+    body,
+    'JSON',
   ].join("\n");
 }
 
@@ -1058,6 +1064,18 @@ function fileToDataUrl(file) {
     reader.addEventListener("error", () => reject(reader.error || new Error("读取参考图失败")));
     reader.readAsDataURL(file);
   });
+}
+
+async function fileToGeminiInlineImage(file) {
+  const dataUrl = await fileToDataUrl(file);
+  const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("读取参考图失败：无法解析图片 data URL。");
+  }
+  return {
+    mimeType: match[1],
+    data: match[2],
+  };
 }
 
 async function requestStreamingJsonImages(endpoint, payload, mode) {

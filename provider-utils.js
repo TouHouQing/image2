@@ -138,10 +138,6 @@ export function getChatCompletionsEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/chat/completions`;
 }
 
-export function getResponsesEndpoint(baseUrl) {
-  return `${normalizeBaseUrl(baseUrl)}/responses`;
-}
-
 export function getGeminiApiBaseUrl(baseUrl) {
   return normalizeBaseUrl(baseUrl)
     .replace(/\/openai$/i, "")
@@ -164,6 +160,12 @@ export function getGeminiGenerationEndpoint(baseUrl, modelId) {
   const normalizedBase = getGeminiApiBaseUrl(baseUrl);
   const normalizedModel = String(modelId || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
   return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:generateContent`;
+}
+
+export function getGeminiStreamGenerationEndpoint(baseUrl, modelId) {
+  const normalizedBase = getGeminiApiBaseUrl(baseUrl);
+  const normalizedModel = String(modelId || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
+  return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:streamGenerateContent?alt=sse`;
 }
 
 export function getGenerationEndpointForModel(baseUrl, modelId) {
@@ -220,25 +222,24 @@ export function buildGeminiChatPayload(model, prompt) {
   return payload;
 }
 
-export function buildGeminiResponsesEditPayload(model, prompt, imageDataUrls) {
+export function buildGeminiEditPayload(prompt, imageParts) {
   return {
-    model,
-    input: [
+    contents: [
       {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `${prompt} Respond with exactly one Markdown image using an inline data URL, no prose.`,
-          },
-          ...(Array.isArray(imageDataUrls) ? imageDataUrls : []).filter(Boolean).map((imageUrl) => ({
-            type: "input_image",
-            image_url: imageUrl,
+        parts: [
+          { text: prompt },
+          ...(Array.isArray(imageParts) ? imageParts : []).filter(Boolean).map((image) => ({
+            inline_data: {
+              mime_type: image.mimeType || "image/png",
+              data: image.data || "",
+            },
           })),
         ],
       },
     ],
-    stream: false,
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
   };
 }
 
