@@ -13,7 +13,7 @@ export const PROVIDERS = {
     id: "gemini",
     label: "Gemini",
     defaultModel: DEFAULT_GEMINI_MODEL,
-    editable: false,
+    editable: true,
   },
 };
 
@@ -51,6 +51,11 @@ export function shouldTranscodeImageResult(providerId, requestedFormat, actualFo
   const requested = normalizeImageOutputFormat(requestedFormat);
   const actual = normalizeImageOutputFormat(actualFormat);
   return providerId === "gpt" && Boolean(requested) && Boolean(actual) && requested !== actual;
+}
+
+export function isPartialImageStreamPayload(payload) {
+  const type = String(payload?.type || "").toLowerCase();
+  return Boolean(type && type.includes("partial_image"));
 }
 
 export function getImage2QualitySizeTier(quality) {
@@ -133,6 +138,10 @@ export function getChatCompletionsEndpoint(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/chat/completions`;
 }
 
+export function getResponsesEndpoint(baseUrl) {
+  return `${normalizeBaseUrl(baseUrl)}/responses`;
+}
+
 export function getGeminiApiBaseUrl(baseUrl) {
   return normalizeBaseUrl(baseUrl)
     .replace(/\/openai$/i, "")
@@ -209,6 +218,28 @@ export function buildGeminiChatPayload(model, prompt) {
   };
 
   return payload;
+}
+
+export function buildGeminiResponsesEditPayload(model, prompt, imageDataUrls) {
+  return {
+    model,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `${prompt} Respond with exactly one Markdown image using an inline data URL, no prose.`,
+          },
+          ...(Array.isArray(imageDataUrls) ? imageDataUrls : []).filter(Boolean).map((imageUrl) => ({
+            type: "input_image",
+            image_url: imageUrl,
+          })),
+        ],
+      },
+    ],
+    stream: false,
+  };
 }
 
 export function extractModelIdsFromResponse(responseJson) {
@@ -374,6 +405,22 @@ export function extractChatCompletionImageItems(responseJson) {
     });
   });
 
+  const responseOutputs = [
+    ...(Array.isArray(responseJson?.output) ? responseJson.output : []),
+    ...(Array.isArray(responseJson?.response?.output) ? responseJson.response.output : []),
+  ];
+  responseOutputs.forEach((output) => {
+    const content = Array.isArray(output?.content) ? output.content : [];
+    content.forEach((part) => {
+      extractDataUrlImageItemsFromText(part?.text || "").forEach((item) => {
+        items.push({
+          ...item,
+          revisedPrompt: "",
+        });
+      });
+    });
+  });
+
   return items;
 }
 
@@ -384,12 +431,29 @@ function getMimeTypeFromDataUrl(dataUrl) {
 
 function getRevisedPromptFromChatContent(content) {
   if (typeof content !== "string") return "";
-  return isImageString(content) ? "" : content;
+  return isImageString(content) || extractDataUrlImageItemsFromText(content).length ? "" : content;
 }
 
 function getImageLikeContentParts(content) {
-  if (typeof content !== "string" || !isImageString(content)) return [];
+  if (typeof content !== "string") return [];
+  const embeddedImages = extractDataUrlImageItemsFromText(content).map((item) => ({
+    data_url: item.dataUrl,
+  }));
+  if (embeddedImages.length) return embeddedImages;
+  if (!isImageString(content)) return [];
   return [{ data_url: normalizeImageString(content) }];
+}
+
+function extractDataUrlImageItemsFromText(text) {
+  const raw = String(text || "");
+  return [...raw.matchAll(/data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/gi)].map((match) => {
+    const mimeType = match[1];
+    const b64 = match[2];
+    return {
+      dataUrl: `data:${mimeType};base64,${b64}`,
+      mimeType,
+    };
+  });
 }
 
 function isImageString(value) {

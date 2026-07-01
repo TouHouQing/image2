@@ -1,6 +1,6 @@
 # Toho Image Studio
 
-纯前端 Image2 / Gemini 生图和 Image2 编辑工作台，默认部署域名为 `img.tohoqing.com`。
+纯前端 Image2 / Gemini 生图和编辑工作台，默认部署域名为 `img.tohoqing.com`。
 
 ## 使用
 
@@ -8,8 +8,8 @@
 2. 输入自己的 API Key。
 3. 点击“获取模型”，页面会从当前接口的 `/models` 拉取可用模型，并根据模型名自动识别 Image2 或 Gemini。
 4. 选择模型后输入提示词，按需切换 `size`、`n`、`output_format` 等参数；Image2 模型还支持 `quality`、`output_compression`、`background`、`moderation`、`stream`、`partial_images` 等高级参数。
-5. 点击生成。生成结果可以下载；Image2 模式下也可以一键进入编辑模式。
-6. 编辑模式支持上传参考图、使用生成图作为参考图、涂抹局部遮罩后再次提交编辑。
+5. 点击生成。生成结果可以下载，也可以一键进入编辑模式。
+6. 编辑模式支持上传参考图、使用生成图作为参考图；Image2 模式还支持涂抹局部遮罩后再次提交编辑。
 
 默认会把 API Key、接口地址、提示词和参数缓存到当前浏览器的 `localStorage`，方便下次继续使用。取消“缓存到此浏览器”会清掉本地缓存。
 
@@ -27,7 +27,7 @@ Image2 的质量档位会同步决定实际请求尺寸：`Low -> 1K`、`Medium 
 
 页面默认接口为 `https://sub.tohoqing.com/v1`，Image2 和 Gemini 都默认从这个接口获取模型。也可以手动改成任意 OpenAI 兼容接口；用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
 
-Gemini 模型在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路由：页面会把默认 `https://sub.tohoqing.com/v1` 自动派生成 `https://sub.tohoqing.com/v1beta/models/{model}:generateContent`。不会走 `/images/generations`，也不会走容易空返回的 `/chat/completions` 图片兼容写法。
+Gemini 生图在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路由：页面会把默认 `https://sub.tohoqing.com/v1` 自动派生成 `https://sub.tohoqing.com/v1beta/models/{model}:generateContent`。Gemini 参考图编辑则走实测能返回图片的 `/v1/responses` 兼容路径；该兼容路径偶尔会空返回，页面会自动重试。
 
 ## API 调用教学
 
@@ -35,9 +35,10 @@ Gemini 模型在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路
 
 - Image2：`POST /images/generations`，用 JSON 请求生成图片。
 - Gemini：`POST /v1beta/models/{model}:generateContent`，使用 Gemini 原生 `contents` / `generationConfig.responseModalities` 请求生成图片。
-- `POST /images/edits`：用 multipart form-data 上传参考图并编辑图片。
+- Image2 编辑：`POST /images/edits`，用 multipart form-data 上传参考图并编辑图片。
+- Gemini 编辑：`POST /responses`，用 OpenAI Responses 兼容请求上传 `input_image`，并要求模型用 Markdown inline data URL 返回编辑后的图片。
 
-Gemini 模式下，页面会解析 Gemini `inlineData` 图片；编辑调用会提示切回 Image2 模型。
+Gemini 模式下，页面会同时解析 Gemini `inlineData` 图片，以及 Responses `output_text` 中的 Markdown data URL 图片。真实测试中，`sub.tohoqing.com` 上的 `gemini-3.1-flash-image:generateContent` 纯生图可以返回图片，但带 `inlineData` 参考图的 native 编辑请求返回上游错误；`/v1beta/interactions` 当前部署返回 404，因此编辑模式使用 `/v1/responses` 兼容路径。
 Image2 模式下，示例 cURL 会展示最终发送给接口的 `size`；显式选择 `Low`、`Medium`、`High` 时分别对应 sub2api 的 `1K`、`2K`、`4K` 档位。
 
 示例中的 API Key 使用 `$API_KEY` 占位，不会把页面里输入的真实 Key 显示在代码块里。

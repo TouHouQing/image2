@@ -2,6 +2,7 @@ import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   buildGeminiGeneratePayload,
+  buildGeminiResponsesEditPayload,
   classifyModelId,
   extractChatCompletionImageItems,
   extractGeminiImageItems,
@@ -9,6 +10,8 @@ import {
   getEditEndpoint,
   getGenerationEndpointForModel,
   getImage2QualitySizeTier,
+  getResponsesEndpoint,
+  isPartialImageStreamPayload,
   getModelListEndpoints,
   getModelSelectState,
   getProviderForModel,
@@ -471,7 +474,7 @@ function renderAll() {
     node.hidden = !isEdit || !canEdit;
   });
   document.querySelector('[data-mode="edit"]').disabled = !canEdit;
-  document.querySelector('[data-mode="edit"]').title = canEdit ? "" : "Gemini 模式暂不支持此编辑工作流";
+  document.querySelector('[data-mode="edit"]').title = "";
   document.querySelectorAll('[data-provider-only="gpt"]').forEach((node) => {
     node.hidden = state.provider !== "gpt";
   });
@@ -479,7 +482,7 @@ function renderAll() {
   elements.promptLabel.textContent = isEdit ? "编辑提示词" : "提示词";
   elements.stageTitle.textContent = isEdit ? "编辑工作区" : "生成结果";
   elements.runButtonText.textContent = isEdit ? "编辑图片" : "生成图片";
-  elements.maskWorkbench.hidden = !isEdit || !canEdit || state.references.length === 0;
+  elements.maskWorkbench.hidden = !isEdit || state.provider !== "gpt" || state.references.length === 0;
 
   renderConnection();
   renderModelSelect();
@@ -519,7 +522,9 @@ function syncControlsFromState() {
   document.querySelector("#moderationOutput").textContent = state.moderation;
   document.querySelector("#streamOutput").textContent = state.stream ? "on" : "off";
   document.querySelector("#partialImagesOutput").textContent = String(state.partial_images);
-  document.querySelector("#fidelityOutput").textContent = `${state.model} 高保真`;
+  document.querySelector("#fidelityOutput").textContent = state.provider === "gemini"
+    ? "Responses 兼容编辑"
+    : `${state.model} 高保真`;
   renderProviderSummary();
   updateApiGuide();
   persistBrowserCache();
@@ -531,7 +536,6 @@ function applyProviderFromModel() {
   }
   state.provider = classifyModelId(state.model);
   if (state.provider !== "gpt") {
-    state.mode = "generate";
     state.stream = false;
     state.partial_images = 0;
   }
@@ -570,7 +574,7 @@ function renderProviderSummary() {
   elements.modelProviderText.textContent = provider.label;
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
-      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑、流式预览和 image2 专属参数已自动收起。"
+      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑使用 /v1/responses 兼容路径，并会自动重试空结果。"
       : "Image2 模式会把 Low / Medium / High 映射为 1K / 2K / 4K 请求尺寸；Auto 则按当前尺寸发送。";
 }
 
@@ -692,7 +696,7 @@ function renderResults() {
   elements.useSelectedForEditButton.disabled = !state.selectedResultId || !supportsEditing();
   elements.useSelectedForEditButton.title = supportsEditing()
     ? ""
-    : "切换到 image2 模型后可将结果作为编辑参考";
+    : "当前模型不支持把结果作为编辑参考";
 
   state.results.forEach((result, index) => {
     const fragment = elements.resultCardTemplate.content.cloneNode(true);
@@ -718,7 +722,7 @@ function renderResults() {
     });
     downloadButton.addEventListener("click", () => downloadResult(result));
     editButton.disabled = !supportsEditing();
-    editButton.title = supportsEditing() ? "作为编辑参考" : "切换到 image2 模型后可编辑";
+    editButton.title = supportsEditing() ? "作为编辑参考" : "当前模型不支持编辑";
     editButton.addEventListener("click", () => useResultForEdit(result));
     elements.resultGrid.append(fragment);
   });
@@ -782,15 +786,15 @@ function validateRequest() {
 
   if (!state.apiKey) return "请输入 API Key。";
   if (!state.prompt) return "请输入提示词。";
-  if (state.size === "custom") {
+  if (state.provider === "gpt" && state.size === "custom") {
     const sizeError = validateCustomSize(state.customWidth, state.customHeight);
     if (sizeError) return sizeError;
   }
-  if (state.background === "transparent") {
+  if (state.provider === "gpt" && state.background === "transparent") {
     return "gpt-image-2 当前不支持 transparent 背景，请选择 auto 或 opaque。";
   }
   if (state.mode === "edit" && !supportsEditing()) {
-    return "当前模型不支持此编辑工作流，请切换到 image2 模型后再编辑。";
+    return "当前模型不支持此编辑工作流，请切换模型后再编辑。";
   }
   if (state.mode === "edit" && !state.references.length) {
     return "编辑模式需要至少上传一张参考图。";
@@ -814,6 +818,11 @@ async function generateImages() {
 }
 
 async function editImages() {
+  if (state.provider === "gemini") {
+    await editGeminiImages();
+    return;
+  }
+
   const formData = new FormData();
   formData.append("model", state.model);
   formData.append("prompt", state.prompt);
@@ -853,6 +862,36 @@ async function editImages() {
   await addResults(parseImageResponseOrThrow(responseJson, state.prompt, "edit"));
 }
 
+async function editGeminiImages() {
+  const imageDataUrls = await Promise.all(state.references.map((reference) => fileToDataUrl(reference.file)));
+  const endpoint = getResponsesEndpoint(state.baseUrl);
+  const payload = buildGeminiResponsesEditPayload(state.model, state.prompt, imageDataUrls);
+  let items = [];
+  let lastError = null;
+  for (let attempt = 0; attempt < 3 && !items.length; attempt += 1) {
+    try {
+      const responseJson = await postGenerate(endpoint, payload);
+      items = parseImageResponse(responseJson, state.prompt, "edit");
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableGeminiEditError(error) || attempt === 2) {
+        throw error;
+      }
+    }
+  }
+  if (!items.length) {
+    if (lastError) throw lastError;
+    throw new Error("Gemini 编辑返回了空图片结果；上游 Responses 兼容路径偶尔会空返回，请重试或调整提示词。");
+  }
+  await addResults(items);
+}
+
+function isRetryableGeminiEditError(error) {
+  const status = Number(error?.status || 0);
+  return status === 408 || status === 429 || status >= 500;
+}
+
 function buildGeneratePayload() {
   if (state.provider === "gemini") {
     return buildGeminiGeneratePayload(state.prompt);
@@ -886,7 +925,7 @@ function buildGeneratePayload() {
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
   const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
-  const editUrl = getEditEndpoint(baseUrl);
+  const editUrl = state.provider === "gemini" ? getResponsesEndpoint(baseUrl) : getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
   const generatePayload = state.provider === "gemini"
     ? buildGeminiGeneratePayload(prompt)
@@ -897,11 +936,11 @@ function updateApiGuide() {
 
   elements.apiBaseText.textContent = baseUrl;
   elements.generateEndpointText.textContent = generationUrl;
-  elements.editEndpointText.textContent = supportsEditing() ? editUrl : "当前 Gemini 模型不支持编辑工作流";
+  elements.editEndpointText.textContent = editUrl;
   elements.generateCurlCode.textContent = buildGenerateCurl(generationUrl, generatePayload);
-  elements.editCurlCode.textContent = supportsEditing()
-    ? buildEditCurl(editUrl, prompt)
-    : "Gemini 模式下请使用生成调用；如需参考图编辑，请在模型下拉中选择 image2 模型。";
+  elements.editCurlCode.textContent = state.provider === "gemini"
+    ? buildGeminiEditCurl(editUrl, prompt)
+    : buildEditCurl(editUrl, prompt);
 }
 
 function buildGenerateCurl(endpoint, payload) {
@@ -938,6 +977,18 @@ function buildEditCurl(endpoint, prompt) {
   }
 
   return lines.join("\n");
+}
+
+function buildGeminiEditCurl(endpoint, prompt) {
+  const payload = buildGeminiResponsesEditPayload(state.model, prompt, ["data:image/png;base64,$REFERENCE_IMAGE_BASE64"]);
+  return [
+    'export API_KEY="你的 API Key"',
+    'export REFERENCE_IMAGE_BASE64="$(base64 -i /path/to/reference.png)"',
+    `curl "${endpoint}" \\`,
+    '  -H "Authorization: Bearer $API_KEY" \\',
+    '  -H "Content-Type: application/json" \\',
+    `  -d '${JSON.stringify(payload, null, 2)}'`,
+  ].join("\n");
 }
 
 function escapeCurlFormValue(value) {
@@ -998,6 +1049,15 @@ async function postForm(endpoint, formData) {
   }
 
   return response.json();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error || new Error("读取参考图失败")));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function requestStreamingJsonImages(endpoint, payload, mode) {
@@ -1061,6 +1121,7 @@ async function readStreamingImageResponse(response, mode) {
     for (const eventChunk of events) {
       const parsed = parseSseEvent(eventChunk);
       if (!parsed) continue;
+      if (isPartialImageStreamPayload(parsed)) continue;
       const items = parseImageResponse(parsed, state.prompt, mode, true);
       if (items.length) {
         const normalizedItems = await addResults(items);
@@ -1232,9 +1293,13 @@ async function readApiError(response) {
     bodyText = await response.text();
     const parsed = JSON.parse(bodyText);
     const message = parsed?.error?.message || parsed?.message || response.statusText;
-    return new Error(`${response.status} ${message}`);
+    const error = new Error(`${response.status} ${message}`);
+    error.status = response.status;
+    return error;
   } catch {
-    return new Error(`${response.status} ${bodyText || response.statusText}`);
+    const error = new Error(`${response.status} ${bodyText || response.statusText}`);
+    error.status = response.status;
+    return error;
   }
 }
 
@@ -1421,7 +1486,7 @@ function downloadResult(result) {
 
 async function useSelectedForEdit() {
   if (!supportsEditing()) {
-    showNotice("请先切换到 image2 模型，再把结果作为编辑参考。", "error");
+    showNotice("当前模型不支持把结果作为编辑参考。", "error");
     return;
   }
   const selected = getSelectedResult();
@@ -1430,7 +1495,7 @@ async function useSelectedForEdit() {
 
 async function useResultForEdit(result) {
   if (!supportsEditing()) {
-    showNotice("请先切换到 image2 模型，再把结果作为编辑参考。", "error");
+    showNotice("当前模型不支持把结果作为编辑参考。", "error");
     return;
   }
   const blob = await fetch(result.dataUrl).then((response) => response.blob());
@@ -1599,15 +1664,6 @@ function resetWorkspace() {
   hideNotice();
   clearMask(false);
   renderAll();
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 function loadImage(src) {

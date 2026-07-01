@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_BASE_URL,
   buildGeminiChatPayload,
+  buildGeminiResponsesEditPayload,
   buildGeminiGeneratePayload,
   classifyModelId,
   extractChatCompletionImageItems,
@@ -16,6 +17,8 @@ import {
   getModelSelectState,
   getGeminiModeForBaseUrl,
   getImage2QualitySizeTier,
+  getResponsesEndpoint,
+  isPartialImageStreamPayload,
   normalizeImageOutputFormat,
   resolveImage2RequestSize,
   shouldTranscodeImageResult,
@@ -45,6 +48,10 @@ assert.equal(
 assert.equal(
   getChatCompletionsEndpoint("sub.tohoqing.com"),
   "https://sub.tohoqing.com/v1/chat/completions",
+);
+assert.equal(
+  getResponsesEndpoint("sub.tohoqing.com"),
+  "https://sub.tohoqing.com/v1/responses",
 );
 assert.equal(
   getGeminiGenerationEndpoint(
@@ -119,6 +126,30 @@ assert.deepEqual(buildGeminiChatPayload("gemini-3.1-flash-image", "画一只猫"
   modalities: ["image", "text"],
   stream: false,
 });
+assert.deepEqual(
+  buildGeminiResponsesEditPayload("gemini-3.1-flash-image", "加一颗红星", [
+    "data:image/png;base64,iVBORw0KGgoAAA",
+  ]),
+  {
+    model: "gemini-3.1-flash-image",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "加一颗红星 Respond with exactly one Markdown image using an inline data URL, no prose.",
+          },
+          {
+            type: "input_image",
+            image_url: "data:image/png;base64,iVBORw0KGgoAAA",
+          },
+        ],
+      },
+    ],
+    stream: false,
+  },
+);
 assert.deepEqual(
   extractGeminiImageItems({
     candidates: [
@@ -202,6 +233,24 @@ assert.deepEqual(
     { dataUrl: "data:image/png;base64,/9j/4AAQ", mimeType: "image/png", revisedPrompt: "" },
   ],
 );
+assert.deepEqual(
+  extractChatCompletionImageItems({
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: "![image](data:image/jpeg;base64,/9j/4AAQ)",
+          },
+        ],
+      },
+    ],
+  }),
+  [
+    { dataUrl: "data:image/jpeg;base64,/9j/4AAQ", mimeType: "image/jpeg", revisedPrompt: "" },
+  ],
+);
 assert.equal(classifyModelId("gpt-image-2"), "gpt");
 assert.equal(classifyModelId("gemini-2.0-flash-preview-image-generation"), "gemini");
 assert.equal(classifyModelId("imagen-4.0-generate-preview"), "gemini");
@@ -230,6 +279,17 @@ assert.equal(shouldTranscodeImageResult("gpt", "jpeg", "jpg"), false);
 assert.equal(shouldTranscodeImageResult("gpt", "png", "png"), false);
 assert.equal(shouldTranscodeImageResult("gemini", "png", "jpeg"), false);
 assert.equal(shouldTranscodeImageResult("gpt", "gif", "jpeg"), false);
+assert.equal(isPartialImageStreamPayload({ type: "image_generation.partial_image", b64_json: "preview" }), true);
+assert.equal(isPartialImageStreamPayload({ type: "image_edit.partial_image", b64_json: "preview" }), true);
+assert.equal(
+  isPartialImageStreamPayload({
+    type: "response.image_generation_call.partial_image",
+    partial_image_b64: "preview",
+  }),
+  true,
+);
+assert.equal(isPartialImageStreamPayload({ type: "image_generation.completed", b64_json: "final" }), false);
+assert.equal(isPartialImageStreamPayload({ b64_json: "final" }), false);
 
 assert.equal(
   pickInitialModel(["gemini-2.0-flash-preview-image-generation", "gpt-image-2"]),
