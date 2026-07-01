@@ -168,6 +168,10 @@ export function getGeminiStreamGenerationEndpoint(baseUrl, modelId) {
   return `${normalizedBase}/models/${encodeURIComponent(normalizedModel)}:streamGenerateContent?alt=sse`;
 }
 
+export function getGeminiInteractionsEndpoint(baseUrl) {
+  return `${getGeminiApiBaseUrl(baseUrl)}/interactions`;
+}
+
 export function getGenerationEndpointForModel(baseUrl, modelId) {
   if (classifyModelId(modelId) !== "gemini") return getGenerationEndpoint(baseUrl);
   return getGeminiGenerationEndpoint(baseUrl, modelId);
@@ -242,6 +246,28 @@ export function buildGeminiEditPayload(prompt, imageParts) {
     ],
     generationConfig: {
       responseModalities: ["IMAGE"],
+    },
+  };
+}
+
+export function buildGeminiInteractionEditPayload(model, prompt, imageParts) {
+  const normalizedPrompt = String(prompt || "").trim();
+  return {
+    model: String(model || DEFAULT_GEMINI_MODEL).replace(/^models\//, ""),
+    input: [
+      {
+        type: "text",
+        text: `请基于参考图进行编辑，只修改用户指定的部分，尽量保持其余内容、风格、光线和构图完全不变，只返回编辑后的图片，不要输出解释。用户要求：${normalizedPrompt}`,
+      },
+      ...(Array.isArray(imageParts) ? imageParts : []).filter(Boolean).map((image) => ({
+        type: "image",
+        data: image.data || "",
+        mime_type: image.mimeType || "image/png",
+      })),
+    ],
+    response_format: {
+      type: "image",
+      mime_type: "image/png",
     },
   };
 }
@@ -360,6 +386,63 @@ export function extractGeminiImageItems(responseJson) {
   });
 
   return items;
+}
+
+export function extractGeminiInteractionImageItems(responseJson) {
+  const directImages = [
+    responseJson?.output_image,
+    responseJson?.outputImage,
+    responseJson?.response?.output_image,
+    responseJson?.response?.outputImage,
+  ].filter(Boolean);
+  const stepContent = [
+    ...(Array.isArray(responseJson?.steps) ? responseJson.steps : []),
+    ...(Array.isArray(responseJson?.response?.steps) ? responseJson.response.steps : []),
+  ].flatMap((step) => (Array.isArray(step?.content) ? step.content : []));
+  const output = [
+    ...(Array.isArray(responseJson?.output) ? responseJson.output : []),
+    ...(Array.isArray(responseJson?.response?.output) ? responseJson.response.output : []),
+  ];
+  const items = [];
+
+  [...directImages, ...stepContent].forEach((part) => {
+    collectGeminiInteractionImagePart(part, "", items);
+  });
+
+  output.forEach((message) => {
+    const content = Array.isArray(message?.content) ? message.content : [];
+    const revisedPrompt = content
+      .map((part) => part?.text)
+      .filter(Boolean)
+      .join("\n");
+
+    content.forEach((part) => {
+      collectGeminiInteractionImagePart(part, revisedPrompt, items);
+    });
+  });
+
+  return items;
+}
+
+function collectGeminiInteractionImagePart(part, revisedPrompt, items) {
+  if (!part) return;
+  if (part.type && part.type !== "image") return;
+
+  if (part.data) {
+    items.push({
+      b64: part.data,
+      mimeType: part.mime_type || part.mimeType || "",
+      revisedPrompt,
+    });
+    return;
+  }
+
+  const uri = part.uri || part.url || part.image_url || part.imageUrl;
+  const dataUrl = typeof uri === "string" ? uri : uri?.url;
+  const match = String(dataUrl || "").match(/^data:([^;,]+);base64,(.+)$/);
+  if (match) {
+    items.push({ b64: match[2], mimeType: match[1], revisedPrompt });
+  }
 }
 
 export function extractChatCompletionImageItems(responseJson) {

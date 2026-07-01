@@ -3,13 +3,16 @@ import {
   DEFAULT_BASE_URL,
   buildGeminiChatPayload,
   buildGeminiEditPayload,
+  buildGeminiInteractionEditPayload,
   buildGeminiGeneratePayload,
   classifyModelId,
   extractChatCompletionImageItems,
+  extractGeminiInteractionImageItems,
   extractGeminiImageItems,
   extractModelIdsFromResponse,
   getChatCompletionsEndpoint,
   getGeminiModelsEndpoint,
+  getGeminiInteractionsEndpoint,
   getGeminiStreamGenerationEndpoint,
   getGeminiGenerationEndpoint,
   getGenerationEndpointForModel,
@@ -52,6 +55,10 @@ assert.equal(
 assert.equal(
   getGeminiStreamGenerationEndpoint("sub.tohoqing.com", "gemini-3.1-flash-image"),
   "https://sub.tohoqing.com/v1beta/models/gemini-3.1-flash-image:streamGenerateContent?alt=sse",
+);
+assert.equal(
+  getGeminiInteractionsEndpoint("sub.tohoqing.com"),
+  "https://sub.tohoqing.com/v1beta/interactions",
 );
 assert.equal(
   getGeminiGenerationEndpoint(
@@ -145,6 +152,29 @@ assert.deepEqual(
   },
 );
 assert.deepEqual(
+  buildGeminiInteractionEditPayload("models/gemini-3.1-flash-image", "加一颗红星", [
+    { mimeType: "image/png", data: "iVBORw0KGgoAAA" },
+  ]),
+  {
+    model: "gemini-3.1-flash-image",
+    input: [
+      {
+        type: "text",
+        text: "请基于参考图进行编辑，只修改用户指定的部分，尽量保持其余内容、风格、光线和构图完全不变，只返回编辑后的图片，不要输出解释。用户要求：加一颗红星",
+      },
+      {
+        type: "image",
+        data: "iVBORw0KGgoAAA",
+        mime_type: "image/png",
+      },
+    ],
+    response_format: {
+      type: "image",
+      mime_type: "image/png",
+    },
+  },
+);
+assert.deepEqual(
   extractGeminiImageItems({
     candidates: [
       {
@@ -180,6 +210,31 @@ assert.deepEqual(
   }),
   [
     { b64: "iVBORw0KGgoBBB", mimeType: "image/png", revisedPrompt: "wrapped" },
+  ],
+);
+assert.deepEqual(
+  extractGeminiInteractionImageItems({
+    output_image: { data: "iVBORw0KGgoCCC", mime_type: "image/png" },
+    steps: [
+      {
+        content: [
+          { type: "image", data: "/9j/4BBB", mime_type: "image/jpeg" },
+        ],
+      },
+    ],
+    output: [
+      {
+        content: [
+          { type: "output_text", text: "edited" },
+          { type: "image", uri: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4" },
+        ],
+      },
+    ],
+  }),
+  [
+    { b64: "iVBORw0KGgoCCC", mimeType: "image/png", revisedPrompt: "" },
+    { b64: "/9j/4BBB", mimeType: "image/jpeg", revisedPrompt: "" },
+    { b64: "UklGRiIAAABXRUJQVlA4", mimeType: "image/webp", revisedPrompt: "edited" },
   ],
 );
 assert.deepEqual(

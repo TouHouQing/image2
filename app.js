@@ -2,13 +2,16 @@ import {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   buildGeminiEditPayload,
+  buildGeminiInteractionEditPayload,
   buildGeminiGeneratePayload,
   classifyModelId,
   extractChatCompletionImageItems,
+  extractGeminiInteractionImageItems,
   extractGeminiImageItems,
   extractModelIdsFromResponse,
   getEditEndpoint,
   getGenerationEndpointForModel,
+  getGeminiInteractionsEndpoint,
   getGeminiStreamGenerationEndpoint,
   getImage2QualitySizeTier,
   isPartialImageStreamPayload,
@@ -574,7 +577,7 @@ function renderProviderSummary() {
   elements.modelProviderText.textContent = provider.label;
   elements.modelSummaryText.textContent =
     provider.id === "gemini"
-      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑使用同一 /v1beta/models 的 streamGenerateContent 按次接口。"
+      ? "Gemini 生图使用 /v1beta/models/{model}:generateContent；编辑优先使用官方 /v1beta/interactions 图像接口。"
       : "Image2 模式会把 Low / Medium / High 映射为 1K / 2K / 4K 请求尺寸；Auto 则按当前尺寸发送。";
 }
 
@@ -864,13 +867,25 @@ async function editImages() {
 
 async function editGeminiImages() {
   const imageParts = await Promise.all(state.references.map((reference) => fileToGeminiInlineImage(reference.file)));
-  const endpoint = getGeminiStreamGenerationEndpoint(state.baseUrl, state.model);
-  const payload = buildGeminiEditPayload(state.prompt, imageParts);
+  const endpoint = getGeminiInteractionsEndpoint(state.baseUrl);
+  const payload = buildGeminiInteractionEditPayload(state.model, state.prompt, imageParts);
+  try {
+    const responseJson = await postGenerate(endpoint, payload);
+    await addResults(parseImageResponseOrThrow(responseJson, state.prompt, "edit"));
+    return;
+  } catch (error) {
+    if (!shouldFallbackGeminiEditToStream(error)) {
+      throw error;
+    }
+  }
+
+  const fallbackEndpoint = getGeminiStreamGenerationEndpoint(state.baseUrl, state.model);
+  const fallbackPayload = buildGeminiEditPayload(state.prompt, imageParts);
   let items = [];
   let lastError = null;
   for (let attempt = 0; attempt < 3 && !items.length; attempt += 1) {
     try {
-      items = await requestStreamingGenerateImages(endpoint, payload, "edit");
+      items = await requestStreamingGenerateImages(fallbackEndpoint, fallbackPayload, "edit");
       lastError = null;
     } catch (error) {
       lastError = error;
@@ -881,8 +896,15 @@ async function editGeminiImages() {
   }
   if (!items.length) {
     if (lastError) throw lastError;
-    throw new Error("Gemini 编辑没有返回图片；上游 v1beta 流式生图接口会偶发空返回，请重试或调整参考图/提示词。");
+    throw new Error("Gemini 编辑没有返回图片；上游 interactions 不可用时的 v1beta 流式兼容接口会偶发空返回，请重试或调整参考图/提示词。");
   }
+}
+
+function shouldFallbackGeminiEditToStream(error) {
+  const status = Number(error?.status || 0);
+  if (status === 404 || status === 405 || status === 501) return true;
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("unsupported") || message.includes("not found");
 }
 
 function isRetryableGeminiEditError(error) {
@@ -923,7 +945,7 @@ function buildGeneratePayload() {
 function updateApiGuide() {
   const baseUrl = normalizeBaseUrl(state.baseUrl);
   const generationUrl = getGenerationEndpointForModel(baseUrl, state.model);
-  const editUrl = state.provider === "gemini" ? getGeminiStreamGenerationEndpoint(baseUrl, state.model) : getEditEndpoint(baseUrl);
+  const editUrl = state.provider === "gemini" ? getGeminiInteractionsEndpoint(baseUrl) : getEditEndpoint(baseUrl);
   const prompt = state.prompt.trim() || "一只白色陶瓷杯，电商主图，干净背景";
   const generatePayload = state.provider === "gemini"
     ? buildGeminiGeneratePayload(prompt)
@@ -978,7 +1000,7 @@ function buildEditCurl(endpoint, prompt) {
 }
 
 function buildGeminiEditCurl(endpoint, prompt) {
-  const payload = buildGeminiEditPayload(prompt, [
+  const payload = buildGeminiInteractionEditPayload(state.model, prompt, [
     { mimeType: "image/png", data: "$REFERENCE_IMAGE_BASE64" },
   ]);
   const authHeader = isGoogleGeminiEndpoint(endpoint)
@@ -1179,6 +1201,23 @@ function parseImageResponse(responseJson, prompt, mode, fromStream = false) {
       revisedPrompt: item.revisedPrompt || "",
       dataUrl: item.dataUrl,
       format: inferImageFormat("", item.dataUrl) || mimeTypeToFormat(item.mimeType) || state.output_format,
+      size: getDisplayRequestSize(),
+      createdAt: Date.now(),
+      fromStream,
+    }));
+  }
+
+  const geminiInteractionItems = extractGeminiInteractionImageItems(responseJson);
+  if (geminiInteractionItems.length) {
+    return geminiInteractionItems.map((item) => ({
+      id: crypto.randomUUID(),
+      mode,
+      provider: state.provider,
+      model: state.model,
+      prompt,
+      revisedPrompt: item.revisedPrompt || "",
+      dataUrl: `data:${item.mimeType || "image/png"};base64,${item.b64}`,
+      format: inferImageFormat(item.b64, "") || mimeTypeToFormat(item.mimeType) || state.output_format,
       size: getDisplayRequestSize(),
       createdAt: Date.now(),
       fromStream,
