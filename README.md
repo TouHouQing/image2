@@ -53,6 +53,21 @@ python3 -m http.server 4173
 
 ## 部署
 
-这是静态站点，直接部署 `index.html`、`styles.css`、`app.js` 即可。后续可以通过 GitHub Pages 配置自定义域名。
+这是静态站点。部署前执行：
+
+```bash
+npm run build
+```
+
+构建产物位于 `dist/`，包含 `index.html`、`styles.css`、`app.js`、`provider-utils.js`。部署时只能上传这个目录，不能把仓库根目录作为 Workers 静态资源目录，否则 `node_modules` 中的 Wrangler 运行文件会超过 Cloudflare 的 25 MiB 单文件资产限制。
+
+在 Cloudflare Workers Builds 中使用：
+
+- 构建命令：`npm run build`
+- 部署命令：`npx wrangler deploy`
+- 非生产分支部署命令：`npx wrangler versions upload`
+- 路径（仓库根目录）：`/`
+
+静态资源目录 `./dist` 由仓库根目录的 `wrangler.jsonc` 配置，不能把它填到 Workers Builds 的“路径”字段中。
 
 纯前端会从浏览器直连 OpenAI 兼容 API。如果浏览器或网络环境阻止跨域请求，需要改用一个非常薄的自有代理；当前项目没有包含后端代码。
