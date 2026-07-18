@@ -1,6 +1,6 @@
 # Toho Image Studio
 
-纯前端 Image2 / Gemini 生图和编辑工作台，默认部署域名为 `img.tohoqing.com`。
+纯前端 Image2 / Gemini 生图和编辑工作台，默认部署域名为 `img.thqllm.com`。
 
 ## 使用
 
@@ -19,15 +19,15 @@ Image2 的质量档位会同步决定实际请求尺寸：`Low -> 1K`、`Medium 
 
 页面顶部和右侧栏放了低打扰的推荐入口，不遮挡生图流程：
 
-- `sub.tohoqing.com`：生图中转站，也支持 Claude、GPT 等最新对话模型。
-- `faka.tohoqing.com`：AI 会员和相关服务发卡网。
+- `sub.thqllm.com`：生图中转站，也支持 Claude、GPT 等最新对话模型。
+- `faka.thqllm.com`：AI 会员和相关服务发卡网。
 - QQ 群 `242080189`：页面内支持一键复制群号。
 
 ## 接口地址
 
-页面默认接口为 `https://sub.tohoqing.com/v1`，Image2 和 Gemini 都默认从这个接口获取模型。也可以手动改成任意 OpenAI 兼容接口；用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
+页面默认接口为 `https://sub.thqllm.com/v1`，Image2 和 Gemini 都默认从这个接口获取模型。也可以手动改成任意 OpenAI 兼容接口；用户只输入域名时，页面会自动补全 `https://` 和 `/v1`。
 
-Gemini 生图在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路由：页面会把默认 `https://sub.tohoqing.com/v1` 自动派生成 `https://sub.tohoqing.com/v1beta/models/{model}:generateContent`。Gemini 参考图编辑也走同一组 `/v1beta/models` 按次生图接口，但使用 `:streamGenerateContent?alt=sse` 以便稳定拿到编辑后的 `inlineData` 图片；该流式接口偶尔会空返回，页面会自动重试。
+Gemini 生图在 `sub.thqllm.com` 下使用 sub2api 的 Gemini 原生兼容路由：页面会把默认 `https://sub.thqllm.com/v1` 自动派生成 `https://sub.thqllm.com/v1beta/models/{model}:generateContent`。Gemini 参考图编辑也走同一组 `/v1beta/models` 按次生图接口，但使用 `:streamGenerateContent?alt=sse` 以便稳定拿到编辑后的 `inlineData` 图片；该流式接口偶尔会空返回，页面会自动重试。
 
 ## API 调用教学
 
@@ -38,7 +38,7 @@ Gemini 生图在 `sub.tohoqing.com` 下使用 sub2api 的 Gemini 原生兼容路
 - Image2 编辑：`POST /images/edits`，用 multipart form-data 上传参考图并编辑图片。
 - Gemini 编辑：`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`，用 Gemini 原生 `contents.parts[].inline_data` 上传参考图并编辑图片。
 
-Gemini 模式下，页面会解析 Gemini `inlineData` 图片。真实测试中，`sub.tohoqing.com` 上的 `gemini-3.1-flash-image:generateContent` 纯生图可以返回图片；带 `inline_data` 参考图的非流式编辑请求会返回上游 502，但同模型的 `streamGenerateContent?alt=sse` 可以返回编辑后的图片，因此编辑模式使用 v1beta 流式生图接口。
+Gemini 模式下，页面会解析 Gemini `inlineData` 图片。真实测试中，`sub.thqllm.com` 上的 `gemini-3.1-flash-image:generateContent` 纯生图可以返回图片；带 `inline_data` 参考图的非流式编辑请求会返回上游 502，但同模型的 `streamGenerateContent?alt=sse` 可以返回编辑后的图片，因此编辑模式使用 v1beta 流式生图接口。
 Image2 模式下，示例 cURL 会展示最终发送给接口的 `size`；显式选择 `Low`、`Medium`、`High` 时分别对应 sub2api 的 `1K`、`2K`、`4K` 档位。
 
 示例中的 API Key 使用 `$API_KEY` 占位，不会把页面里输入的真实 Key 显示在代码块里。

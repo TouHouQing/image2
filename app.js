@@ -9,6 +9,7 @@ import {
   extractGeminiInteractionImageItems,
   extractGeminiImageItems,
   extractModelIdsFromResponse,
+  formatImageRequestError,
   getEditEndpoint,
   getGenerationEndpointForModel,
   getGeminiInteractionsEndpoint,
@@ -773,7 +774,7 @@ async function runImageRequest() {
     }
     showNotice("图片已生成。可以下载，或直接作为下一次编辑参考。", "success");
   } catch (error) {
-    showNotice(formatRequestError(error), "error");
+    showNotice(formatImageRequestError(error), "error");
     elements.connectionPill.classList.add("error");
   } finally {
     setRunning(false);
@@ -1348,16 +1349,14 @@ async function readApiError(response) {
   let bodyText = "";
   try {
     bodyText = await response.text();
-    const parsed = JSON.parse(bodyText);
-    const message = parsed?.error?.message || parsed?.message || response.statusText;
-    const error = new Error(`${response.status} ${message}`);
-    error.status = response.status;
-    return error;
-  } catch {
-    const error = new Error(`${response.status} ${bodyText || response.statusText}`);
-    error.status = response.status;
-    return error;
-  }
+  } catch {}
+
+  const statusLine = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+  const detail = bodyText || response.statusText || "接口没有返回错误正文。";
+  const error = new Error(`${statusLine}: ${detail}`);
+  error.status = response.status;
+  error.fullMessage = `${statusLine}\n${detail}`;
+  return error;
 }
 
 async function testEndpoint() {

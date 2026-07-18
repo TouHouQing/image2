@@ -1,4 +1,4 @@
-export const DEFAULT_BASE_URL = "https://sub.tohoqing.com/v1";
+export const DEFAULT_BASE_URL = "https://sub.thqllm.com/v1";
 export const DEFAULT_MODEL = "gpt-image-2";
 export const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-preview-image-generation";
 
@@ -51,6 +51,11 @@ export function shouldTranscodeImageResult(providerId, requestedFormat, actualFo
   const requested = normalizeImageOutputFormat(requestedFormat);
   const actual = normalizeImageOutputFormat(actualFormat);
   return providerId === "gpt" && Boolean(requested) && Boolean(actual) && requested !== actual;
+}
+
+export function formatImageRequestError(error) {
+  const detail = String(error?.fullMessage || error?.message || error || "未知错误").trim();
+  return `生图请求失败。完整报错如下：\n${detail || "未知错误"}\n\n请将以上完整报错发送给管理员，以便排查。`;
 }
 
 export function isPartialImageStreamPayload(payload) {

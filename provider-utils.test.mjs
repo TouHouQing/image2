@@ -10,6 +10,7 @@ import {
   extractGeminiInteractionImageItems,
   extractGeminiImageItems,
   extractModelIdsFromResponse,
+  formatImageRequestError,
   getChatCompletionsEndpoint,
   getGeminiModelsEndpoint,
   getGeminiInteractionsEndpoint,
@@ -34,8 +35,8 @@ import {
 } from "./provider-utils.js";
 
 assert.equal(normalizeBaseUrl(""), DEFAULT_BASE_URL);
-assert.equal(normalizeBaseUrl("sub.tohoqing.com"), "https://sub.tohoqing.com/v1");
-assert.equal(normalizeBaseUrl("https://sub.tohoqing.com/v1/"), "https://sub.tohoqing.com/v1");
+assert.equal(normalizeBaseUrl("sub.thqllm.com"), "https://sub.thqllm.com/v1");
+assert.equal(normalizeBaseUrl("https://sub.thqllm.com/v1/"), "https://sub.thqllm.com/v1");
 assert.equal(
   normalizeBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai/"),
   "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -45,20 +46,20 @@ assert.equal(
   "https://generativelanguage.googleapis.com/v1beta/openai/images/generations",
 );
 assert.equal(
-  getGenerationEndpoint("sub.tohoqing.com"),
-  "https://sub.tohoqing.com/v1/images/generations",
+  getGenerationEndpoint("sub.thqllm.com"),
+  "https://sub.thqllm.com/v1/images/generations",
 );
 assert.equal(
-  getChatCompletionsEndpoint("sub.tohoqing.com"),
-  "https://sub.tohoqing.com/v1/chat/completions",
+  getChatCompletionsEndpoint("sub.thqllm.com"),
+  "https://sub.thqllm.com/v1/chat/completions",
 );
 assert.equal(
-  getGeminiStreamGenerationEndpoint("sub.tohoqing.com", "gemini-3.1-flash-image"),
-  "https://sub.tohoqing.com/v1beta/models/gemini-3.1-flash-image:streamGenerateContent?alt=sse",
+  getGeminiStreamGenerationEndpoint("sub.thqllm.com", "gemini-3.1-flash-image"),
+  "https://sub.thqllm.com/v1beta/models/gemini-3.1-flash-image:streamGenerateContent?alt=sse",
 );
 assert.equal(
-  getGeminiInteractionsEndpoint("sub.tohoqing.com"),
-  "https://sub.tohoqing.com/v1beta/interactions",
+  getGeminiInteractionsEndpoint("sub.thqllm.com"),
+  "https://sub.thqllm.com/v1beta/interactions",
 );
 assert.equal(
   getGeminiGenerationEndpoint(
@@ -68,12 +69,12 @@ assert.equal(
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
 );
 assert.equal(
-  getGeminiGenerationEndpoint("https://sub.tohoqing.com/v1", "models/gemini-2.5-flash-image"),
-  "https://sub.tohoqing.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+  getGeminiGenerationEndpoint("https://sub.thqllm.com/v1", "models/gemini-2.5-flash-image"),
+  "https://sub.thqllm.com/v1beta/models/gemini-2.5-flash-image:generateContent",
 );
 assert.equal(
-  getGenerationEndpointForModel("https://sub.tohoqing.com/v1", "gemini-3.1-flash-image"),
-  "https://sub.tohoqing.com/v1beta/models/gemini-3.1-flash-image:generateContent",
+  getGenerationEndpointForModel("https://sub.thqllm.com/v1", "gemini-3.1-flash-image"),
+  "https://sub.thqllm.com/v1beta/models/gemini-3.1-flash-image:generateContent",
 );
 assert.equal(
   getGenerationEndpointForModel(
@@ -82,15 +83,15 @@ assert.equal(
   ),
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
 );
-assert.equal(getGeminiModeForBaseUrl("https://sub.tohoqing.com/v1"), "native");
+assert.equal(getGeminiModeForBaseUrl("https://sub.thqllm.com/v1"), "native");
 assert.equal(getGeminiModeForBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), "native");
 assert.equal(
-  getGeminiModelsEndpoint("https://sub.tohoqing.com/v1"),
-  "https://sub.tohoqing.com/v1beta/models",
+  getGeminiModelsEndpoint("https://sub.thqllm.com/v1"),
+  "https://sub.thqllm.com/v1beta/models",
 );
-assert.deepEqual(getModelListEndpoints("https://sub.tohoqing.com/v1"), [
-  "https://sub.tohoqing.com/v1/models",
-  "https://sub.tohoqing.com/v1beta/models",
+assert.deepEqual(getModelListEndpoints("https://sub.thqllm.com/v1"), [
+  "https://sub.thqllm.com/v1/models",
+  "https://sub.thqllm.com/v1beta/models",
 ]);
 assert.deepEqual(getModelListEndpoints("https://generativelanguage.googleapis.com/v1beta/openai"), [
   "https://generativelanguage.googleapis.com/v1beta/openai/models",
@@ -106,8 +107,16 @@ assert.equal(
   isGoogleGeminiEndpoint("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-image:generateContent"),
   true,
 );
-assert.equal(isGoogleGeminiBaseUrl("https://sub.tohoqing.com/v1"), false);
+assert.equal(isGoogleGeminiBaseUrl("https://sub.thqllm.com/v1"), false);
 assert.equal(isGoogleGeminiBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"), true);
+
+const requestError = new Error("429 Too Many Requests");
+requestError.fullMessage = "HTTP 429 Too Many Requests\n{\"error\":{\"message\":\"quota exceeded\"}}";
+assert.equal(
+  formatImageRequestError(requestError),
+  "生图请求失败。完整报错如下：\nHTTP 429 Too Many Requests\n{\"error\":{\"message\":\"quota exceeded\"}}\n\n请将以上完整报错发送给管理员，以便排查。",
+);
+
 assert.deepEqual(buildGeminiGeneratePayload("画一只猫"), {
   contents: [
     {
